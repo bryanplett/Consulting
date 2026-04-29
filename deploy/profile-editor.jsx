@@ -302,7 +302,7 @@ function LoginAccessPanel({ sb, client }) {
     }
 
     try {
-      const res = await fetch(window.SUPABASE_FN_URL + '/admin-set-password', {
+      const res = await fetch(window.SUPABASE_FN_URL + '/swift-api', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
