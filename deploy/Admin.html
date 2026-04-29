@@ -10,6 +10,13 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script type="text/babel" src="weighin.jsx"></script>
+<script type="text/babel" src="workout-editor.jsx"></script>
+<script type="text/babel" src="nutrition-editor.jsx"></script>
+<script type="text/babel" src="macros-calculator.jsx"></script>
+<script type="text/babel" src="workout-builder.jsx"></script>
+<script type="text/babel" src="profile-editor.jsx"></script>
+<script type="text/babel" src="client-invite.jsx"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -129,7 +136,7 @@ const Login = ({ onSignedIn }) => {
 };
 
 // ─── Clients List ─────────────────────────────────────────────────────────────
-const ClientsList = ({ clients, onSelect, onRefresh }) => {
+const ClientsList = ({ clients, onSelect, onEdit, onRefresh }) => {
   const [showAdd, setShowAdd] = React.useState(false);
   const [form, setForm] = React.useState({ name: '', email: '', phone: '' });
   const [busy, setBusy] = React.useState(false);
@@ -152,10 +159,15 @@ const ClientsList = ({ clients, onSelect, onRefresh }) => {
     <div className="fade-in">
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
         <h2 style={{ fontSize: 28, fontWeight: 600, letterSpacing: '-0.025em' }}>Clients</h2>
-        <button className="btn-blue" onClick={() => setShowAdd(s => !s)}>{showAdd ? 'Cancel' : '+ New Client'}</button>
+        <button className="btn-blue" onClick={() => setShowAdd(s => !s)}>{showAdd ? 'Done' : '+ Onboard Client'}</button>
       </div>
 
-      {showAdd && (
+      {showAdd && window.ClientInvite && (
+        <window.ClientInvite sb={sb} onInvited={() => { onRefresh(); }}
+          onCancel={() => setShowAdd(false)} />
+      )}
+
+      {showAdd && !window.ClientInvite && (
         <div className="card" style={{ marginBottom: 24 }}>
           <form onSubmit={addClient} style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
             <input className="field-input" placeholder="Full name" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
@@ -194,8 +206,12 @@ const ClientsList = ({ clients, onSelect, onRefresh }) => {
                     {c.status || 'active'}
                   </span>
                 </td>
-                <td style={{ padding: '16px 20px', textAlign: 'right' }}>
-                  <button className="btn-ghost" onClick={() => onSelect(c)}>Manage →</button>
+                <td style={{ padding: '16px 20px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                  <div style={{ display: 'inline-flex', gap: 6, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                    <button className="btn-ghost" onClick={() => onEdit(c, 'workout')} style={{ padding: '7px 12px', fontSize: 12 }}>Edit Workout</button>
+                    <button className="btn-ghost" onClick={() => onEdit(c, 'nutrition')} style={{ padding: '7px 12px', fontSize: 12 }}>Edit Nutrition</button>
+                    <button className="btn-ghost" onClick={() => onSelect(c)} style={{ padding: '7px 12px', fontSize: 12 }}>Manage →</button>
+                  </div>
                 </td>
               </tr>
             ))}
@@ -207,8 +223,8 @@ const ClientsList = ({ clients, onSelect, onRefresh }) => {
 };
 
 // ─── Client Detail ────────────────────────────────────────────────────────────
-const ClientDetail = ({ client, onBack }) => {
-  const [tab, setTab] = React.useState('orders');
+const ClientDetail = ({ client, onBack, onEdit }) => {
+  const [tab, setTab] = React.useState('profile');
   const [orders, setOrders] = React.useState([]);
   const [nutrition, setNutrition] = React.useState('');
   const [workout, setWorkout] = React.useState('');
@@ -242,14 +258,37 @@ const ClientDetail = ({ client, onBack }) => {
     setTimeout(() => setSaveMsg(''), 2000);
   };
 
+  const deleteClient = async () => {
+    const ok = window.confirm(
+      `Delete ${client.name || client.email}?\n\n` +
+      `This removes the client record and all of their plans, orders, weigh-ins, and bloodwork.\n\n` +
+      `Note: their auth login (if any) lives in Supabase Auth and must be removed there separately.`
+    );
+    if (!ok) return;
+    const { error } = await sb.from('clients').delete().eq('id', client.id);
+    if (error) { window.alert('Delete failed: ' + error.message); return; }
+    onBack();
+  };
+
   return (
     <div className="fade-in">
       <button className="btn-ghost" onClick={onBack} style={{ marginBottom: 20 }}>← All clients</button>
-      <h2 style={{ fontSize: 28, fontWeight: 600, letterSpacing: '-0.025em', marginBottom: 4 }}>{client.name}</h2>
-      <p style={{ color: 'rgba(255,255,255,0.5)', marginBottom: 24, fontSize: 14 }}>{client.email} · {client.phone || 'no phone'}</p>
+      <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', flexWrap:'wrap', gap:12, marginBottom: 4 }}>
+        <div>
+          <h2 style={{ fontSize: 28, fontWeight: 600, letterSpacing: '-0.025em' }}>{client.name}</h2>
+          <p style={{ color: 'rgba(255,255,255,0.5)', marginTop: 4, fontSize: 14 }}>{client.email} · {client.phone || 'no phone'}</p>
+        </div>
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <button className="btn-ghost" onClick={()=>onEdit && onEdit(client,'workout')}>Edit Workout</button>
+          <button className="btn-ghost" onClick={()=>onEdit && onEdit(client,'nutrition')}>Edit Nutrition</button>
+          <button className="btn-ghost" onClick={deleteClient}
+            style={{ color: '#ff453a', borderColor: 'rgba(255,69,58,0.3)' }}>Delete client</button>
+        </div>
+      </div>
+      <div style={{ marginBottom: 24 }} />
 
       <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
-        {['orders','nutrition','workout','bloodwork'].map(t => (
+        {['profile','orders','nutrition','workout','weigh-in','bloodwork'].map(t => (
           <button key={t} onClick={() => setTab(t)}
             style={{ background: 'transparent', border: 'none', color: tab === t ? '#fff' : 'rgba(255,255,255,0.5)',
               padding: '10px 16px', fontSize: 14, fontWeight: tab === t ? 600 : 400, cursor: 'pointer',
@@ -257,6 +296,11 @@ const ClientDetail = ({ client, onBack }) => {
               textTransform: 'capitalize' }}>{t}</button>
         ))}
       </div>
+
+      {tab === 'profile' && window.ProfileEditor && (
+        <window.ProfileEditor sb={sb} client={client}
+          onSaved={(updated) => { Object.assign(client, updated); }} />
+      )}
 
       {tab === 'orders' && (
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
@@ -316,6 +360,10 @@ const ClientDetail = ({ client, onBack }) => {
         </div>
       )}
 
+      {tab === 'weigh-in' && (
+        <WeighIn sb={sb} userId={client.id} readOnly={true} clientName={client.name} />
+      )}
+
       {tab === 'bloodwork' && (
         <div className="card">
           <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>
@@ -340,6 +388,9 @@ const App = () => {
   const [loading, setLoading] = React.useState(true);
   const [clients, setClients] = React.useState([]);
   const [selected, setSelected] = React.useState(null);
+  const [editor, setEditor] = React.useState(null); // { client, kind: 'workout'|'nutrition' }
+  const [showCalculator, setShowCalculator] = React.useState(false);
+  const [showBuilder, setShowBuilder] = React.useState(false);
 
   const loadClients = async () => {
     const { data } = await sb.from('clients').select('*').order('created_at', { ascending: false });
@@ -379,15 +430,25 @@ const App = () => {
           <span style={{ fontSize: 12, letterSpacing: 2, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Admin</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <button className="btn-ghost" onClick={() => { setShowBuilder(true); setShowCalculator(false); setSelected(null); setEditor(null); }}>Workout Builder</button>
+          <button className="btn-ghost" onClick={() => { setShowCalculator(true); setShowBuilder(false); setSelected(null); setEditor(null); }}>Macros Calculator</button>
           <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{user.email}</span>
           <button className="btn-ghost" onClick={signOut}>Sign Out</button>
         </div>
       </header>
 
       <main style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 32px' }}>
-        {selected
-          ? <ClientDetail client={selected} onBack={() => { setSelected(null); loadClients(); }} />
-          : <ClientsList clients={clients} onSelect={setSelected} onRefresh={loadClients} />}
+        {showBuilder
+          ? <WorkoutBuilder sb={sb} clients={clients} onBack={() => setShowBuilder(false)} />
+          : showCalculator
+          ? <MacrosCalculator sb={sb} clients={clients} onBack={() => setShowCalculator(false)} />
+          : editor
+          ? (editor.kind === 'workout'
+              ? <WorkoutEditor sb={sb} client={editor.client} onBack={() => setEditor(null)} />
+              : <NutritionEditor sb={sb} client={editor.client} onBack={() => setEditor(null)} />)
+          : selected
+            ? <ClientDetail client={selected} onBack={() => { setSelected(null); loadClients(); }} onEdit={(c,kind)=>setEditor({client:c,kind})} />
+            : <ClientsList clients={clients} onSelect={setSelected} onEdit={(c,kind)=>setEditor({client:c,kind})} onRefresh={loadClients} />}
       </main>
     </div>
   );
