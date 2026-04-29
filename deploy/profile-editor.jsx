@@ -36,6 +36,7 @@ function ProfileEditor({ sb, client, onSaved }) {
       emergency_contact_name: data.emergency_contact_name || null,
       emergency_contact_phone: data.emergency_contact_phone || null,
       notes: data.notes || null,
+      pricelist: data.pricelist || 'standard',
       profile_updated_at: new Date().toISOString(),
     };
     const { data: updated, error } = await sb.from('clients')
@@ -202,6 +203,18 @@ function ProfileEditor({ sb, client, onSaved }) {
           <input style={inputStyle} type="tel"
             value={data.emergency_contact_phone || ''}
             onChange={e => setField('emergency_contact_phone', e.target.value)} />
+        </Field>
+
+        <Field label="Pricelist" span={3}>
+          <Sel value={data.pricelist || 'standard'}
+            onChange={v => setField('pricelist', v)}
+            options={(window.getPricelistOptions ? window.getPricelistOptions() : [
+              { value: 'standard',  label: 'Standard'  },
+              { value: 'wholesale', label: 'Wholesale' },
+            ])} />
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 6, lineHeight: 1.5 }}>
+            Determines which prices this client sees in their order form. Defaults to Standard for new clients.
+          </p>
         </Field>
 
         <Field label="Coach notes (private)" span={3}>

@@ -10,6 +10,7 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script src="pricelists.js"></script>
 <script type="text/babel" src="weighin.jsx"></script>
 <script type="text/babel" src="onboarding-quiz.jsx"></script>
 <style>
@@ -470,6 +471,17 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
   const [notes, setNotes] = React.useState('');
   const [success, setSuccess] = React.useState(false);
 
+  // Pick the right product list for this client, based on their pricelist
+  // setting (set by the coach in the admin profile editor). Falls back to
+  // the legacy hardcoded PRODUCTS list if pricelists.js hasn't loaded.
+  const productOptions = React.useMemo(() => {
+    const key = userData?.profile?.pricelist || 'standard';
+    if (typeof window.getPricelistAsLabels === 'function') {
+      return window.getPricelistAsLabels(key);
+    }
+    return PRODUCTS;
+  }, [userData?.profile?.pricelist]);
+
   const submit = async (e) => {
     e.preventDefault();
     if (!product) return;
@@ -536,7 +548,7 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
             <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Product / Service</label>
             <select className="field-input" value={product} onChange={e => setProduct(e.target.value)}>
               <option value="">Select a product</option>
-              {PRODUCTS.map(p => <option key={p}>{p}</option>)}
+              {productOptions.map(p => <option key={p}>{p}</option>)}
             </select>
           </div>
           <div>
