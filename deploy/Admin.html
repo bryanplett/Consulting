@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PeakForm Bio — Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    background: #0a0a0a; color: #f5f5f7;
+    -webkit-font-smoothing: antialiased;
+  }
+  input, select, textarea, button { font-family: inherit; }
+  button:active { transform: scale(0.97); }
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+
+  .field-input {
+    width: 100%; border: 1px solid rgba(255,255,255,0.10); border-radius: 10px;
+    padding: 11px 14px; font-size: 15px; color: #f5f5f7; background: rgba(255,255,255,0.06);
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .field-input::placeholder { color: rgba(255,255,255,0.28); }
+  .field-input:focus { border-color: #2997ff; box-shadow: 0 0 0 3px rgba(41,151,255,0.14); }
+  textarea.field-input { resize: vertical; min-height: 120px; font-family: 'SF Mono', Menlo, monospace; font-size: 14px; line-height: 1.6; }
+  select.field-input { appearance: none; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23ffffff' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+  }
+  select.field-input option { background: #1a1a1c; color: #f5f5f7; }
+  .btn-blue {
+    background: #0066cc; color: #fff; border: none; border-radius: 980px;
+    padding: 11px 24px; font-size: 15px; font-weight: 400; cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn-blue:hover { background: #2997ff; }
+  .btn-ghost {
+    background: transparent; color: #2997ff; border: 1px solid rgba(41,151,255,0.5);
+    border-radius: 980px; padding: 9px 18px; font-size: 14px; cursor: pointer;
+  }
+  .btn-ghost:hover { border-color: #2997ff; }
+  .card {
+    background: #1a1a1c; border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.07); padding: 28px;
+  }
+  .tag {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: 980px; font-size: 12px; font-weight: 600;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.2s ease; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+const SUPABASE_URL = 'https://zfsbppflcnqwdafscwvj.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_e37DrXhbEJ6aQO14h-OZow_gEVzmxHo';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// IMPORTANT: set this to YOUR admin email — only this account can access /Admin.html
+const ADMIN_EMAIL = 'bryanplett@gmail.com';
+
+const STATUS_COLORS = {
+  pending: { bg: 'rgba(255,159,10,0.14)', fg: '#ff9f0a' },
+  invoiced: { bg: 'rgba(41,151,255,0.14)', fg: '#2997ff' },
+  paid: { bg: 'rgba(52,199,89,0.14)', fg: '#34c759' },
+  shipped: { bg: 'rgba(191,90,242,0.14)', fg: '#bf5af2' },
+  delivered: { bg: 'rgba(255,255,255,0.10)', fg: 'rgba(255,255,255,0.7)' },
+};
+
+// ─── Login ────────────────────────────────────────────────────────────────────
+const Login = ({ onSignedIn }) => {
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setError(''); setLoading(true);
+    const { data, error: err } = await sb.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (err) { setError(err.message); return; }
+    if (data.user.email.toLowerCase() !== ADMIN_EMAIL.toLowerCase()) {
+      await sb.auth.signOut();
+      setError('This account does not have admin access.');
+      return;
+    }
+    onSignedIn(data.user);
+  };
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+      <div style={{ width: '100%', maxWidth: 420 }}>
+        <div style={{ textAlign: 'center', marginBottom: 32 }}>
+          <img src="1_5058098532557259934/PNG/VV/Asset 1@4x.png" alt="PeakForm Bio"
+            style={{ height: 96, width: 'auto' }} />
+          <p style={{ marginTop: 16, fontSize: 13, letterSpacing: 2, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Admin</p>
+        </div>
+        <div className="card">
+          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Email</label>
+              <input className="field-input" type="email" required value={email} onChange={e => setEmail(e.target.value)} />
+            </div>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Password</label>
+              <input className="field-input" type="password" required value={password} onChange={e => setPassword(e.target.value)} />
+            </div>
+            {error && <div style={{ background: 'rgba(255,59,48,0.10)', border: '1px solid rgba(255,59,48,0.3)', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#ff453a' }}>{error}</div>}
+            <button type="submit" className="btn-blue" disabled={loading} style={{ marginTop: 8 }}>
+              {loading ? 'Signing in…' : 'Sign In'}
+            </button>
+          </form>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Clients List ─────────────────────────────────────────────────────────────
+const ClientsList = ({ clients, onSelect, onRefresh }) => {
+  const [showAdd, setShowAdd] = React.useState(false);
+  const [form, setForm] = React.useState({ name: '', email: '', phone: '' });
+  const [busy, setBusy] = React.useState(false);
+  const [msg, setMsg] = React.useState('');
+
+  const addClient = async (e) => {
+    e.preventDefault();
+    setBusy(true); setMsg('');
+    const { error } = await sb.from('clients').insert({
+      name: form.name, email: form.email, phone: form.phone, status: 'active',
+    });
+    setBusy(false);
+    if (error) { setMsg('Error: ' + error.message); return; }
+    setMsg('Client record created. Now invite them via Supabase Auth → Users → "Invite user".');
+    setForm({ name: '', email: '', phone: '' });
+    onRefresh();
+  };
+
+  return (
+    <div className="fade-in">
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24 }}>
+        <h2 style={{ fontSize: 28, fontWeight: 600, letterSpacing: '-0.025em' }}>Clients</h2>
+        <button className="btn-blue" onClick={() => setShowAdd(s => !s)}>{showAdd ? 'Cancel' : '+ New Client'}</button>
+      </div>
+
+      {showAdd && (
+        <div className="card" style={{ marginBottom: 24 }}>
+          <form onSubmit={addClient} style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 12 }}>
+            <input className="field-input" placeholder="Full name" required value={form.name} onChange={e => setForm({...form, name: e.target.value})} />
+            <input className="field-input" type="email" placeholder="Email" required value={form.email} onChange={e => setForm({...form, email: e.target.value})} />
+            <input className="field-input" placeholder="Phone (optional)" value={form.phone} onChange={e => setForm({...form, phone: e.target.value})} />
+            <button type="submit" className="btn-blue" disabled={busy} style={{ gridColumn: 'span 3' }}>
+              {busy ? 'Creating…' : 'Create Client Record'}
+            </button>
+            {msg && <div style={{ gridColumn: 'span 3', fontSize: 13, color: msg.startsWith('Error') ? '#ff453a' : '#34c759' }}>{msg}</div>}
+          </form>
+        </div>
+      )}
+
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+              <th style={{ textAlign: 'left', padding: '14px 20px', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</th>
+              <th style={{ textAlign: 'left', padding: '14px 20px', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Email</th>
+              <th style={{ textAlign: 'left', padding: '14px 20px', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Phone</th>
+              <th style={{ textAlign: 'left', padding: '14px 20px', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            {clients.length === 0 && (
+              <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>No clients yet.</td></tr>
+            )}
+            {clients.map(c => (
+              <tr key={c.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                <td style={{ padding: '16px 20px', fontWeight: 500 }}>{c.name}</td>
+                <td style={{ padding: '16px 20px', color: 'rgba(255,255,255,0.7)' }}>{c.email}</td>
+                <td style={{ padding: '16px 20px', color: 'rgba(255,255,255,0.7)' }}>{c.phone || '—'}</td>
+                <td style={{ padding: '16px 20px' }}>
+                  <span className="tag" style={{ background: c.status === 'active' ? 'rgba(52,199,89,0.14)' : 'rgba(255,255,255,0.08)', color: c.status === 'active' ? '#34c759' : 'rgba(255,255,255,0.6)' }}>
+                    {c.status || 'active'}
+                  </span>
+                </td>
+                <td style={{ padding: '16px 20px', textAlign: 'right' }}>
+                  <button className="btn-ghost" onClick={() => onSelect(c)}>Manage →</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+// ─── Client Detail ────────────────────────────────────────────────────────────
+const ClientDetail = ({ client, onBack }) => {
+  const [tab, setTab] = React.useState('orders');
+  const [orders, setOrders] = React.useState([]);
+  const [nutrition, setNutrition] = React.useState('');
+  const [workout, setWorkout] = React.useState('');
+  const [bloodwork, setBloodwork] = React.useState([]);
+  const [saveMsg, setSaveMsg] = React.useState('');
+
+  React.useEffect(() => {
+    (async () => {
+      const { data: ords } = await sb.from('orders').select('*').eq('client_id', client.id).order('created_at', { ascending: false });
+      setOrders(ords || []);
+      const { data: np } = await sb.from('nutrition_plans').select('*').eq('client_id', client.id).maybeSingle();
+      setNutrition(np?.content || '');
+      const { data: wp } = await sb.from('workout_plans').select('*').eq('client_id', client.id).maybeSingle();
+      setWorkout(wp?.content || '');
+      const { data: bw } = await sb.from('bloodwork_files').select('*').eq('client_id', client.id).order('uploaded_at', { ascending: false });
+      setBloodwork(bw || []);
+    })();
+  }, [client.id]);
+
+  const setOrderStatus = async (id, status) => {
+    await sb.from('orders').update({ status }).eq('id', id);
+    setOrders(o => o.map(x => x.id === id ? {...x, status} : x));
+  };
+
+  const savePlan = async (kind) => {
+    const table = kind === 'nutrition' ? 'nutrition_plans' : 'workout_plans';
+    const content = kind === 'nutrition' ? nutrition : workout;
+    const { error } = await sb.from(table).upsert({ client_id: client.id, content, updated_at: new Date().toISOString() }, { onConflict: 'client_id' });
+    if (error) { setSaveMsg('Error: ' + error.message); return; }
+    setSaveMsg('Saved.');
+    setTimeout(() => setSaveMsg(''), 2000);
+  };
+
+  return (
+    <div className="fade-in">
+      <button className="btn-ghost" onClick={onBack} style={{ marginBottom: 20 }}>← All clients</button>
+      <h2 style={{ fontSize: 28, fontWeight: 600, letterSpacing: '-0.025em', marginBottom: 4 }}>{client.name}</h2>
+      <p style={{ color: 'rgba(255,255,255,0.5)', marginBottom: 24, fontSize: 14 }}>{client.email} · {client.phone || 'no phone'}</p>
+
+      <div style={{ display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+        {['orders','nutrition','workout','bloodwork'].map(t => (
+          <button key={t} onClick={() => setTab(t)}
+            style={{ background: 'transparent', border: 'none', color: tab === t ? '#fff' : 'rgba(255,255,255,0.5)',
+              padding: '10px 16px', fontSize: 14, fontWeight: tab === t ? 600 : 400, cursor: 'pointer',
+              borderBottom: tab === t ? '2px solid #2997ff' : '2px solid transparent',
+              textTransform: 'capitalize' }}>{t}</button>
+        ))}
+      </div>
+
+      {tab === 'orders' && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          {orders.length === 0 && <div style={{ padding: 24, color: 'rgba(255,255,255,0.4)' }}>No orders.</div>}
+          {orders.length > 0 && (
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead><tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+                {['Date','Item','Qty','Status','Notes',''].map(h => (
+                  <th key={h} style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
+                ))}
+              </tr></thead>
+              <tbody>
+                {orders.map(o => {
+                  const sc = STATUS_COLORS[o.status] || STATUS_COLORS.pending;
+                  return (
+                    <tr key={o.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                      <td style={{ padding: '14px 18px', color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>{new Date(o.created_at).toLocaleDateString()}</td>
+                      <td style={{ padding: '14px 18px', fontSize: 14 }}>{o.item}</td>
+                      <td style={{ padding: '14px 18px' }}>{o.qty}</td>
+                      <td style={{ padding: '14px 18px' }}>
+                        <span className="tag" style={{ background: sc.bg, color: sc.fg }}>{o.status || 'pending'}</span>
+                      </td>
+                      <td style={{ padding: '14px 18px', fontSize: 13, color: 'rgba(255,255,255,0.55)', maxWidth: 200 }}>{o.notes || '—'}</td>
+                      <td style={{ padding: '14px 18px', textAlign: 'right' }}>
+                        <select value={o.status || 'pending'} onChange={e => setOrderStatus(o.id, e.target.value)}
+                          style={{ background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 8, padding: '6px 10px', fontSize: 13 }}>
+                          <option value="pending">pending</option>
+                          <option value="invoiced">invoiced</option>
+                          <option value="paid">paid</option>
+                          <option value="shipped">shipped</option>
+                          <option value="delivered">delivered</option>
+                        </select>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+      )}
+
+      {(tab === 'nutrition' || tab === 'workout') && (
+        <div className="card">
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 12 }}>
+            Edit the {tab} plan below. The client sees this in their portal immediately after saving.
+          </p>
+          <textarea className="field-input"
+            placeholder={tab === 'nutrition' ? 'Daily targets, meal structure, supplements...' : 'Weekly schedule, exercises, sets/reps...'}
+            value={tab === 'nutrition' ? nutrition : workout}
+            onChange={e => tab === 'nutrition' ? setNutrition(e.target.value) : setWorkout(e.target.value)}
+            style={{ minHeight: 320 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 16 }}>
+            <button className="btn-blue" onClick={() => savePlan(tab)}>Save Plan</button>
+            {saveMsg && <span style={{ fontSize: 13, color: saveMsg.startsWith('Error') ? '#ff453a' : '#34c759' }}>{saveMsg}</span>}
+          </div>
+        </div>
+      )}
+
+      {tab === 'bloodwork' && (
+        <div className="card">
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>
+            Files the client has uploaded. ({bloodwork.length})
+          </p>
+          {bloodwork.length === 0 && <p style={{ color: 'rgba(255,255,255,0.4)' }}>No bloodwork files yet.</p>}
+          {bloodwork.map(f => (
+            <div key={f.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.05)', fontSize: 14 }}>
+              <span>{f.file_name}</span>
+              <span style={{ color: 'rgba(255,255,255,0.5)', fontSize: 13 }}>{new Date(f.uploaded_at).toLocaleDateString()}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// ─── App ──────────────────────────────────────────────────────────────────────
+const App = () => {
+  const [user, setUser] = React.useState(null);
+  const [loading, setLoading] = React.useState(true);
+  const [clients, setClients] = React.useState([]);
+  const [selected, setSelected] = React.useState(null);
+
+  const loadClients = async () => {
+    const { data } = await sb.from('clients').select('*').order('created_at', { ascending: false });
+    setClients(data || []);
+  };
+
+  React.useEffect(() => {
+    (async () => {
+      const { data: { session } } = await sb.auth.getSession();
+      if (session && session.user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase()) {
+        setUser(session.user);
+        await loadClients();
+      }
+      setLoading(false);
+    })();
+  }, []);
+
+  const onSignedIn = async (u) => {
+    setUser(u);
+    await loadClients();
+  };
+
+  const signOut = async () => {
+    await sb.auth.signOut();
+    setUser(null);
+    setSelected(null);
+  };
+
+  if (loading) return <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.5)' }}>Loading…</div>;
+  if (!user) return <Login onSignedIn={onSignedIn} />;
+
+  return (
+    <div style={{ minHeight: '100vh' }}>
+      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <img src="1_5058098532557259934/PNG/VV/Asset 1@4x.png" alt="" style={{ height: 36, width: 'auto' }} />
+          <span style={{ fontSize: 12, letterSpacing: 2, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Admin</span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{user.email}</span>
+          <button className="btn-ghost" onClick={signOut}>Sign Out</button>
+        </div>
+      </header>
+
+      <main style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 32px' }}>
+        {selected
+          ? <ClientDetail client={selected} onBack={() => { setSelected(null); loadClients(); }} />
+          : <ClientsList clients={clients} onSelect={setSelected} onRefresh={loadClients} />}
+      </main>
+    </div>
+  );
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+
+</script>
+</body>
+</html>

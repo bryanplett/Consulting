@@ -1,0 +1,366 @@
+/*
+ * PeakFormBeauty Design System
+ * colors_and_type.css
+ * All design tokens as CSS custom properties.
+ * Font stack: system-ui / -apple-system (resolves to SF Pro on Apple devices)
+ * Google Fonts fallback: Inter (see fonts/README.md)
+ */
+
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap');
+
+:root {
+
+  /* ─────────────────────────────────────────
+   * COLORS — Primary / Action
+   * ───────────────────────────────────────── */
+  --color-action-blue:     #0066cc;   /* Primary CTA, all links, all interactive */
+  --color-focus-blue:      #0071e3;   /* Keyboard focus ring only — never decorative */
+  --color-sky-blue:        #2997ff;   /* Links on dark surfaces */
+
+  /* ─────────────────────────────────────────
+   * COLORS — Text
+   * ───────────────────────────────────────── */
+  --color-ink:             #1d1d1f;   /* All headings + body on light surfaces */
+  --color-paper:           #ffffff;   /* All text on dark surfaces & dark nav */
+  --color-ink-80:          rgba(0, 0, 0, 0.80);  /* Body on pearl-button surface */
+  --color-ink-48:          rgba(0, 0, 0, 0.48);  /* Disabled text, legal fine print */
+
+  /* ─────────────────────────────────────────
+   * COLORS — Surfaces / Backgrounds
+   * ───────────────────────────────────────── */
+  --color-white:           #ffffff;   /* Primary canvas */
+  --color-parchment:       #f5f5f7;   /* Alternating light tile, footer, sub-nav base */
+  --color-pearl:           #fafafc;   /* Pearl button fill */
+  --color-black:           #000000;   /* Global nav, video backgrounds */
+
+  /* Dark tile family — three micro-stepped near-blacks */
+  --color-tile-dark-1:     #272729;   /* Primary dark tile */
+  --color-tile-dark-2:     #2a2a2c;   /* Micro-step lighter — adjacent separation */
+  --color-tile-dark-3:     #252527;   /* Micro-step darker — bottom-of-stack / player */
+
+  /* ─────────────────────────────────────────
+   * COLORS — Borders & Overlays
+   * ───────────────────────────────────────── */
+  --color-hairline:        rgba(0, 0, 0, 0.08);  /* Utility card border, input border */
+  --color-divider-4:       rgba(0, 0, 0, 0.04);  /* Pearl button ring */
+  --color-chip-gray:       rgba(210, 210, 215, 0.64); /* Floating control chips over photo */
+  --color-chip-gray-48:    rgba(210, 210, 215, 0.48);
+
+  /* ─────────────────────────────────────────
+   * COLORS — Semantic
+   * ───────────────────────────────────────── */
+  --color-interactive:     var(--color-action-blue);
+  --color-focus:           var(--color-focus-blue);
+  --color-on-light:        var(--color-ink);
+  --color-on-dark:         var(--color-paper);
+  --color-surface-light:   var(--color-white);
+  --color-surface-alt:     var(--color-parchment);
+  --color-surface-dark:    var(--color-tile-dark-1);
+
+  /* ─────────────────────────────────────────
+   * TYPOGRAPHY — Font Stacks
+   * ───────────────────────────────────────── */
+  --font-display: system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Display",
+                  "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-text:    system-ui, -apple-system, BlinkMacSystemFont, "SF Pro Text",
+                  "Inter", "Helvetica Neue", Helvetica, Arial, sans-serif;
+
+  /* ─────────────────────────────────────────
+   * TYPOGRAPHY — Scale (size / weight / lh / ls)
+   * ───────────────────────────────────────── */
+
+  /* Hero Headline */
+  --type-hero-size:        56px;
+  --type-hero-weight:      600;
+  --type-hero-lh:          1.07;
+  --type-hero-ls:          -0.28px;
+
+  /* H1 / Tile Headline */
+  --type-h1-size:          40px;
+  --type-h1-weight:        600;
+  --type-h1-lh:            1.10;
+  --type-h1-ls:            -0.25px;
+
+  /* H2 / Section */
+  --type-h2-size:          34px;
+  --type-h2-weight:        600;
+  --type-h2-lh:            1.47;
+  --type-h2-ls:            -0.374px;
+
+  /* Lead / Subhead */
+  --type-lead-size:        28px;
+  --type-lead-weight:      400;
+  --type-lead-lh:          1.14;
+  --type-lead-ls:          0.196px;
+
+  /* Large Lead */
+  --type-large-lead-size:  24px;
+  --type-large-lead-weight: 300;
+  --type-large-lead-lh:    1.50;
+  --type-large-lead-ls:    0px;
+
+  /* Sub-tile Tagline */
+  --type-tagline-size:     21px;
+  --type-tagline-weight:   400;
+  --type-tagline-lh:       1.19;
+  --type-tagline-ls:       0.231px;
+
+  /* Body Strong */
+  --type-body-strong-size:   17px;
+  --type-body-strong-weight: 600;
+  --type-body-strong-lh:     1.24;
+  --type-body-strong-ls:     -0.374px;
+
+  /* Body */
+  --type-body-size:        17px;
+  --type-body-weight:      400;
+  --type-body-lh:          1.47;
+  --type-body-ls:          -0.374px;
+
+  /* Dense List (footer/store) */
+  --type-list-size:        17px;
+  --type-list-weight:      400;
+  --type-list-lh:          2.41;
+  --type-list-ls:          0px;
+
+  /* Caption / Meta */
+  --type-caption-size:     14px;
+  --type-caption-weight:   400;
+  --type-caption-lh:       1.43;
+  --type-caption-ls:       -0.224px;
+
+  /* Caption Strong */
+  --type-caption-strong-size:   14px;
+  --type-caption-strong-weight: 600;
+  --type-caption-strong-lh:     1.29;
+  --type-caption-strong-ls:     -0.224px;
+
+  /* Button Large */
+  --type-btn-lg-size:      18px;
+  --type-btn-lg-weight:    300;
+  --type-btn-lg-lh:        1.00;
+  --type-btn-lg-ls:        0px;
+
+  /* Button Utility */
+  --type-btn-util-size:    14px;
+  --type-btn-util-weight:  400;
+  --type-btn-util-lh:      1.29;
+  --type-btn-util-ls:      -0.224px;
+
+  /* Nav Global */
+  --type-nav-size:         12px;
+  --type-nav-weight:       400;
+  --type-nav-lh:           1.00;
+  --type-nav-ls:           -0.12px;
+
+  /* Fine Print */
+  --type-fine-size:        12px;
+  --type-fine-weight:      400;
+  --type-fine-lh:          1.00;
+  --type-fine-ls:          -0.12px;
+
+  /* Micro Legal */
+  --type-micro-size:       10px;
+  --type-micro-weight:     400;
+  --type-micro-lh:         1.30;
+  --type-micro-ls:         -0.08px;
+
+  /* ─────────────────────────────────────────
+   * SPACING — Base 8px system
+   * ───────────────────────────────────────── */
+  --space-1:    2px;
+  --space-2:    4px;
+  --space-3:    8px;
+  --space-4:    12px;
+  --space-5:    16px;
+  --space-6:    20px;
+  --space-7:    24px;
+  --space-8:    32px;
+  --space-9:    40px;
+  --space-10:   48px;
+  --space-11:   64px;
+  --space-12:   80px;
+
+  /* Section vertical padding */
+  --space-section-y:       64px;
+  --space-section-y-sm:    48px;
+
+  /* Card padding */
+  --space-card:            24px;
+  --space-card-sm:         20px;
+
+  /* Button padding */
+  --space-btn-pill-y:      11px;
+  --space-btn-pill-x:      22px;
+  --space-btn-util-y:      8px;
+  --space-btn-util-x:      15px;
+
+  /* ─────────────────────────────────────────
+   * BORDER RADIUS
+   * ───────────────────────────────────────── */
+  --radius-0:    0px;
+  --radius-sm:   8px;
+  --radius-pearl: 11px;
+  --radius-card: 18px;
+  --radius-pill: 980px;
+  --radius-circle: 50%;
+
+  /* ─────────────────────────────────────────
+   * ELEVATION / SHADOWS
+   * ───────────────────────────────────────── */
+  --shadow-none:     none;
+  --shadow-hairline: 0 0 0 1px rgba(0, 0, 0, 0.08);
+  --shadow-product:  rgba(0, 0, 0, 0.22) 3px 5px 30px 0;
+
+  /* Focus ring */
+  --focus-ring:      0 0 0 2px var(--color-focus-blue);
+
+  /* Backdrop blur (sub-nav / sticky bars) */
+  --blur-subnav:     blur(20px) saturate(180%);
+
+  /* ─────────────────────────────────────────
+   * LAYOUT
+   * ───────────────────────────────────────── */
+  --max-width-text:    980px;
+  --max-width-grid:    1440px;
+  --nav-height:        44px;
+  --subnav-height:     52px;
+
+  /* ─────────────────────────────────────────
+   * TRANSITIONS
+   * ───────────────────────────────────────── */
+  --transition-press:  transform 0.1s ease;
+  --transition-fade:   opacity 0.2s ease;
+}
+
+/* ─────────────────────────────────────────
+ * SEMANTIC ELEMENT DEFAULTS
+ * Apply these to a reset stylesheet or body context
+ * ───────────────────────────────────────── */
+body {
+  font-family: var(--font-text);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
+  line-height: var(--type-body-lh);
+  letter-spacing: var(--type-body-ls);
+  color: var(--color-ink);
+  background-color: var(--color-white);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+h1 {
+  font-family: var(--font-display);
+  font-size: var(--type-h1-size);
+  font-weight: var(--type-h1-weight);
+  line-height: var(--type-h1-lh);
+  letter-spacing: var(--type-h1-ls);
+}
+
+h2 {
+  font-family: var(--font-display);
+  font-size: var(--type-h2-size);
+  font-weight: var(--type-h2-weight);
+  line-height: var(--type-h2-lh);
+  letter-spacing: var(--type-h2-ls);
+}
+
+p {
+  font-family: var(--font-text);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
+  line-height: var(--type-body-lh);
+  letter-spacing: var(--type-body-ls);
+}
+
+a {
+  color: var(--color-action-blue);
+  text-decoration: none;
+}
+
+a:focus-visible {
+  outline: 2px solid var(--color-focus-blue);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+/* ─────────────────────────────────────────
+ * BUTTON UTILITY CLASSES
+ * ───────────────────────────────────────── */
+
+/* Primary pill CTA */
+.btn-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-action-blue);
+  color: var(--color-paper);
+  font-family: var(--font-text);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
+  line-height: 1;
+  letter-spacing: 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  padding: var(--space-btn-pill-y) var(--space-btn-pill-x);
+  cursor: pointer;
+  transition: var(--transition-press);
+  text-decoration: none;
+}
+.btn-pill:active { transform: scale(0.95); }
+.btn-pill:focus-visible { outline: 2px solid var(--color-focus-blue); outline-offset: 2px; }
+
+/* Ghost pill CTA */
+.btn-pill-ghost {
+  background: transparent;
+  color: var(--color-action-blue);
+  border: 1px solid var(--color-action-blue);
+  border-radius: var(--radius-pill);
+  padding: var(--space-btn-pill-y) var(--space-btn-pill-x);
+  font-family: var(--font-text);
+  font-size: var(--type-body-size);
+  font-weight: var(--type-body-weight);
+  cursor: pointer;
+  transition: var(--transition-press);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.btn-pill-ghost:active { transform: scale(0.95); }
+
+/* Dark utility button */
+.btn-util-dark {
+  background: var(--color-ink);
+  color: var(--color-paper);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  padding: var(--space-btn-util-y) var(--space-btn-util-x);
+  font-family: var(--font-text);
+  font-size: var(--type-btn-util-size);
+  font-weight: var(--type-btn-util-weight);
+  letter-spacing: var(--type-btn-util-ls);
+  cursor: pointer;
+  transition: var(--transition-press);
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+.btn-util-dark:active { transform: scale(0.95); }
+
+/* Pearl capsule button */
+.btn-pearl {
+  background: var(--color-pearl);
+  color: var(--color-ink-80);
+  border: 3px solid var(--color-divider-4);
+  border-radius: var(--radius-pearl);
+  padding: 0 14px;
+  font-family: var(--font-text);
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-caption-weight);
+  letter-spacing: var(--type-caption-ls);
+  cursor: pointer;
+  transition: var(--transition-press);
+  display: inline-flex;
+  align-items: center;
+  height: 32px;
+}

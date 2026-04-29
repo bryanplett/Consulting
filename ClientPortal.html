@@ -1,0 +1,1099 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PeakForm Bio — Client Portal</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;600;700&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
+<script type="text/babel" src="weighin.jsx"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    background: #0a0a0a; color: #f5f5f7;
+    -webkit-font-smoothing: antialiased;
+  }
+  input, select, textarea, button { font-family: inherit; }
+  button:active { transform: scale(0.97); }
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 3px; }
+
+  .field-input {
+    width: 100%; border: 1px solid rgba(255,255,255,0.10); border-radius: 10px;
+    padding: 11px 14px; font-size: 15px; color: #f5f5f7; background: rgba(255,255,255,0.06);
+    outline: none; transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  .field-input::placeholder { color: rgba(255,255,255,0.28); }
+  .field-input:focus { border-color: #2997ff; box-shadow: 0 0 0 3px rgba(41,151,255,0.14); }
+  select.field-input { appearance: none; cursor: pointer;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23ffffff' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 12px center;
+  }
+  select.field-input option { background: #1a1a1c; color: #f5f5f7; }
+  .btn-blue {
+    background: #0066cc; color: #fff; border: none; border-radius: 980px;
+    padding: 11px 24px; font-size: 15px; font-weight: 400; cursor: pointer;
+    transition: background 0.15s, transform 0.1s;
+  }
+  .btn-blue:hover { background: #2997ff; }
+  .btn-blue:active { transform: scale(0.96); }
+  .btn-ghost {
+    background: transparent; color: #2997ff; border: 1px solid rgba(41,151,255,0.5);
+    border-radius: 980px; padding: 10px 20px; font-size: 14px; cursor: pointer;
+    transition: transform 0.1s, border-color 0.15s;
+  }
+  .btn-ghost:hover { border-color: #2997ff; }
+  .card {
+    background: #1a1a1c; border-radius: 18px;
+    border: 1px solid rgba(255,255,255,0.07); padding: 28px;
+  }
+  .tag {
+    display: inline-flex; align-items: center;
+    padding: 3px 10px; border-radius: 980px; font-size: 12px; font-weight: 600;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .fade-in { animation: fadeIn 0.2s ease; }
+  @media (max-width: 768px) {
+    .sidebar { display: none !important; }
+    .mobile-tabs { display: flex !important; }
+  }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+
+// ─── Supabase Client ──────────────────────────────────────────────────────────
+const SUPABASE_URL = 'https://zfsbppflcnqwdafscwvj.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_e37DrXhbEJ6aQO14h-OZow_gEVzmxHo';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ─── Legacy demo data (fallback only) ─────────────────────────────────────────
+const USERS = {
+  john_doe: {
+    password: 'client123',
+    name: 'John Doe',
+    email: 'john@example.com',
+    orders: [
+      { id: 1, date: '2026-03-10', item: 'Whey Protein — Chocolate', qty: 2, status: 'Delivered' },
+      { id: 2, date: '2026-03-22', item: 'Omega-3 Fish Oil', qty: 1, status: 'Delivered' },
+      { id: 3, date: '2026-04-05', item: 'Creatine Monohydrate', qty: 1, status: 'In Transit' },
+    ],
+    nutrition: {
+      goal: 'Muscle Gain',
+      macros: { calories: 3100, protein: 220, carbs: 360, fat: 80 },
+      days: [
+        { day: 'Monday', meals: ['Oats + eggs + berries', 'Chicken breast + rice + broccoli', 'Greek yogurt', 'Salmon + sweet potato + greens'] },
+        { day: 'Tuesday', meals: ['Protein smoothie + banana', 'Turkey wrap + spinach', 'Almonds + apple', 'Beef stir-fry + rice'] },
+        { day: 'Wednesday', meals: ['Egg white omelette + toast', 'Tuna salad + quinoa', 'Cottage cheese', 'Grilled chicken + pasta'] },
+        { day: 'Thursday', meals: ['Greek yogurt parfait', 'Chicken Caesar salad', 'Protein bar', 'Shrimp + rice + veggies'] },
+        { day: 'Friday', meals: ['Scrambled eggs + avocado toast', 'Turkey bowl + brown rice', 'Whey shake', 'Lean beef + mashed potato'] },
+        { day: 'Saturday', meals: ['Pancakes + protein powder', 'Grilled chicken + fries', 'Mixed nuts', 'Pizza (controlled portions)'] },
+        { day: 'Sunday', meals: ['French toast + eggs', 'Salmon poke bowl', 'Protein smoothie', 'Roast chicken + veggies'] },
+      ],
+    },
+    workout: {
+      goal: 'Hypertrophy',
+      days: [
+        { day: 'Monday', focus: 'Chest & Triceps', exercises: [
+          { name: 'Bench Press', sets: 4, reps: '8–10', rest: '90s' },
+          { name: 'Incline Dumbbell Press', sets: 3, reps: '10–12', rest: '75s' },
+          { name: 'Cable Fly', sets: 3, reps: '12–15', rest: '60s' },
+          { name: 'Tricep Pushdown', sets: 3, reps: '12–15', rest: '60s' },
+        ]},
+        { day: 'Tuesday', focus: 'Back & Biceps', exercises: [
+          { name: 'Pull-Ups', sets: 4, reps: '6–8', rest: '90s' },
+          { name: 'Barbell Row', sets: 4, reps: '8–10', rest: '90s' },
+          { name: 'Lat Pulldown', sets: 3, reps: '10–12', rest: '75s' },
+          { name: 'Barbell Curl', sets: 3, reps: '10–12', rest: '60s' },
+        ]},
+        { day: 'Wednesday', focus: 'Active Recovery', exercises: [
+          { name: '30-min Walk', sets: 1, reps: '—', rest: '—' },
+          { name: 'Foam Roll', sets: 1, reps: '10 min', rest: '—' },
+        ]},
+        { day: 'Thursday', focus: 'Legs', exercises: [
+          { name: 'Squat', sets: 4, reps: '6–8', rest: '2min' },
+          { name: 'Romanian Deadlift', sets: 3, reps: '10', rest: '90s' },
+          { name: 'Leg Press', sets: 3, reps: '12', rest: '75s' },
+          { name: 'Calf Raise', sets: 4, reps: '15–20', rest: '45s' },
+        ]},
+        { day: 'Friday', focus: 'Shoulders', exercises: [
+          { name: 'Overhead Press', sets: 4, reps: '8–10', rest: '90s' },
+          { name: 'Lateral Raise', sets: 4, reps: '12–15', rest: '60s' },
+          { name: 'Face Pull', sets: 3, reps: '15', rest: '60s' },
+        ]},
+        { day: 'Saturday', focus: 'Full Body', exercises: [
+          { name: 'Deadlift', sets: 3, reps: '5', rest: '2min' },
+          { name: 'Push-Up', sets: 3, reps: '15', rest: '60s' },
+          { name: 'Dumbbell Row', sets: 3, reps: '12', rest: '60s' },
+        ]},
+        { day: 'Sunday', focus: 'Rest', exercises: [] },
+      ],
+    },
+    bloodwork: ['BloodPanel_Jan2026.pdf', 'Hormones_Feb2026.pdf'],
+  },
+
+  sarah_m: {
+    password: 'peak2026',
+    name: 'Sarah Mitchell',
+    email: 'sarah@example.com',
+    orders: [
+      { id: 1, date: '2026-02-14', item: 'Collagen Peptides', qty: 2, status: 'Delivered' },
+      { id: 2, date: '2026-03-30', item: 'Magnesium Glycinate', qty: 1, status: 'Delivered' },
+    ],
+    nutrition: {
+      goal: 'Fat Loss + Tone',
+      macros: { calories: 1950, protein: 155, carbs: 185, fat: 58 },
+      days: [
+        { day: 'Monday', meals: ['Egg whites + spinach + berries', 'Grilled chicken salad', 'Apple + almond butter', 'Baked salmon + asparagus'] },
+        { day: 'Tuesday', meals: ['Greek yogurt + granola', 'Turkey lettuce wraps', 'Protein shake', 'Chicken + zucchini noodles'] },
+        { day: 'Wednesday', meals: ['Overnight oats + chia', 'Tuna + mixed greens', 'Rice cakes + hummus', 'Shrimp stir-fry + cauliflower rice'] },
+        { day: 'Thursday', meals: ['Smoothie bowl', 'Grilled chicken + quinoa', 'Hard-boiled eggs', 'Lean beef + roasted veggies'] },
+        { day: 'Friday', meals: ['Avocado toast + eggs', 'Salmon salad', 'Protein bar', 'Chicken tacos (corn tortilla)'] },
+        { day: 'Saturday', meals: ['Waffles + protein powder', 'Sushi (sashimi-heavy)', 'Edamame', 'Grilled steak + sweet potato'] },
+        { day: 'Sunday', meals: ['Omelette + fruit', 'Chicken soup', 'Almonds', 'Poke bowl'] },
+      ],
+    },
+    workout: {
+      goal: 'Strength & Conditioning',
+      days: [
+        { day: 'Monday', focus: 'Lower Body', exercises: [
+          { name: 'Goblet Squat', sets: 4, reps: '12', rest: '60s' },
+          { name: 'Hip Thrust', sets: 4, reps: '12–15', rest: '75s' },
+          { name: 'Walking Lunge', sets: 3, reps: '10 each', rest: '60s' },
+          { name: 'Leg Curl', sets: 3, reps: '12–15', rest: '45s' },
+        ]},
+        { day: 'Tuesday', focus: 'Upper Body Push', exercises: [
+          { name: 'Dumbbell Press', sets: 3, reps: '10–12', rest: '60s' },
+          { name: 'Arnold Press', sets: 3, reps: '12', rest: '60s' },
+          { name: 'Lateral Raise', sets: 3, reps: '15', rest: '45s' },
+          { name: 'Tricep Dip', sets: 3, reps: '10–12', rest: '60s' },
+        ]},
+        { day: 'Wednesday', focus: 'Cardio / HIIT', exercises: [
+          { name: 'Treadmill Intervals', sets: 8, reps: '30s on / 30s off', rest: '—' },
+          { name: 'Jump Rope', sets: 3, reps: '2 min', rest: '60s' },
+        ]},
+        { day: 'Thursday', focus: 'Upper Body Pull', exercises: [
+          { name: 'Assisted Pull-Up', sets: 4, reps: '8', rest: '90s' },
+          { name: 'Seated Row', sets: 3, reps: '12', rest: '60s' },
+          { name: 'Face Pull', sets: 3, reps: '15', rest: '45s' },
+          { name: 'Dumbbell Curl', sets: 3, reps: '12', rest: '45s' },
+        ]},
+        { day: 'Friday', focus: 'Full Body Circuit', exercises: [
+          { name: 'Kettlebell Swing', sets: 4, reps: '15', rest: '45s' },
+          { name: 'Box Jump', sets: 3, reps: '8', rest: '60s' },
+          { name: 'Push-Up', sets: 3, reps: '15', rest: '45s' },
+          { name: 'TRX Row', sets: 3, reps: '12', rest: '45s' },
+        ]},
+        { day: 'Saturday', focus: 'Yoga / Mobility', exercises: [
+          { name: 'Sun Salutation', sets: 5, reps: '—', rest: '—' },
+          { name: 'Hip Flexor Stretch', sets: 2, reps: '60s each', rest: '—' },
+        ]},
+        { day: 'Sunday', focus: 'Rest', exercises: [] },
+      ],
+    },
+    bloodwork: ['FullPanel_Mar2026.pdf'],
+  },
+};
+
+const PRODUCTS = [
+  // Consulting Services
+  'Nutrition Plan — 1 Month — $350',
+  'Workout Routine — 1 Month — $250',
+  'Hormone / Bloodwork Consultation — 1 Month — $250',
+  'Nutrition / Workout / Hormone Bundle — 1 Month — $600',
+  // Peptides
+  'Selank — 10mg — $150',
+  'Semax — 10mg — $150',
+  'KPV — 10mg — $125',
+  'DSIP — 10mg — $175',
+  'SS-31 — 10mg — $125',
+  'SS-31 — 30mg — $175',
+  'CJC 1295 DAC — 5mg — $150',
+  'BPC — 10mg — $175',
+  '5 Amino — 50mg — $175',
+  'SNAP-8 — 8mg — $100',
+  'TB-500 — 10mg — $175',
+  'PT-141 — 10mg — $125',
+  'HGH — 10IU — $150',
+  'HGH — 36IU — $200',
+  'MOTS — 10mg — $125',
+  'MOTS — 40mg — $200',
+  'Epithalon — 50mg — $225',
+  'GHRP-2 — 10mg — $150',
+  'GHRP-6 — 10mg — $150',
+  'HCG — 5000IU — $150',
+  'CJC/IPA — 5+5mg — $175',
+  'IPA — 10mg — $125',
+  'IGF LR3 — 1mg — $200',
+  'Cagrilintide — 10mg — $150',
+  'KLOW — 80mg — $200',
+  'NAD+ — 1000mg — $150',
+  'Glutathione — 1200mg — $125',
+  // GLP-1 / Weight Loss
+  'Semaglutide — 10mg — $150',
+  'Semaglutide — 15mg — $175',
+  'Tirzepatide — 10mg — $150',
+  'Tirzepatide — 20mg — $175',
+  'Tirzepatide — 30mg — $200',
+  'Tirzepatide — 40mg — $225',
+  'Tirzepatide — 60mg — $250',
+  'Retatrutide — 10mg — $160',
+  'Retatrutide — 12mg — $170',
+  'Retatrutide — 15mg — $180',
+  'Retatrutide — 20mg — $200',
+  'Retatrutide — 30mg — $225',
+  'Retatrutide — 60mg — $275',
+];
+
+// ─── Icons ────────────────────────────────────────────────────────────────────
+const icons = {
+  order:   <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><rect x="1" y="3" width="16" height="13" rx="2" stroke="currentColor" strokeWidth="1.5"/><path d="M6 3V2a3 3 0 0 1 6 0v1" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  history: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><circle cx="9" cy="9" r="7.5" stroke="currentColor" strokeWidth="1.5"/><path d="M9 5v4l3 2" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  nutrition:<svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2c-3.5 0-6 2.8-6 6 0 2.5 1.3 4.6 3.2 5.8V16h5.6v-2.2C13.7 12.6 15 10.5 15 8c0-3.2-2.5-6-6-6z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/><line x1="9" y1="2" x2="9" y2="6" stroke="currentColor" strokeWidth="1.4" strokeLinecap="round"/></svg>,
+  workout: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 9h2M13 9h2M5 9h3M10 9h3M5 6v6M13 6v6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/></svg>,
+  weighin: <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M3 14l4-4 3 3 5-6" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><path d="M11 7h4v4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+  blood:   <svg width="18" height="18" viewBox="0 0 18 18" fill="none"><path d="M9 2L4 9.5C4 12.5 6.2 15 9 15s5-2.5 5-5.5L9 2z" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round"/></svg>,
+  logout:  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M6 2H3a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3M11 11l3-3-3-3M7 8h7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>,
+};
+
+const statusColors = {
+  'Delivered':  { bg: 'rgba(52,199,89,0.12)', color: '#1a8a3c' },
+  'In Transit': { bg: 'rgba(255,159,10,0.13)', color: '#b86b00' },
+  'Processing': { bg: 'rgba(0,102,204,0.10)', color: '#0055b3' },
+};
+
+// ─── Login ────────────────────────────────────────────────────────────────────
+const LoginScreen = ({ onLogin }) => {
+  const [email, setEmail] = React.useState('');
+  const [password, setPassword] = React.useState('');
+  const [error, setError] = React.useState('');
+  const [loading, setLoading] = React.useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    setLoading(true);
+    setError('');
+    const { data, error } = await sb.auth.signInWithPassword({ email, password });
+    setLoading(false);
+    if (error) {
+      setError(error.message || 'Sign-in failed.');
+    } else if (data?.user) {
+      onLogin(data.user.id);
+    }
+  };
+
+  const demo = (e, p) => {
+    setEmail(e);
+    setPassword(p);
+    setError('');
+  };
+
+  return (
+    <div style={{
+      minHeight: '100vh', background: '#000',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      padding: 24,
+      backgroundImage: 'radial-gradient(ellipse at 50% 40%, rgba(0,102,204,0.18) 0%, transparent 65%)',
+    }}>
+      <div style={{ width: '100%', maxWidth: 420 }}>
+        {/* Logo */}
+        <div style={{ textAlign: 'center', marginBottom: 40, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+          <img src="1_5058098532557259934/PNG/VV/Asset 1@4x.png" alt="PeakForm Bio"
+            style={{ height: 360, width: 'auto', marginBottom: 16 }} />
+          <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.45)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+            Client Portal
+          </p>
+        </div>
+
+        <div className="card" style={{ borderRadius: 20, padding: 36 }}>
+          <h2 style={{ fontSize: 24, fontWeight: 600, marginBottom: 6, letterSpacing: '-0.02em' }}>Sign in</h2>
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.45)', marginBottom: 28 }}>Access your personalized program.</p>
+
+          <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Email</label>
+              <input className="field-input" type="email" placeholder="you@email.com"
+                value={email} onChange={e => { setEmail(e.target.value); setError(''); }} />
+            </div>
+            <div>
+              <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Password</label>
+              <input className="field-input" type="password" placeholder="••••••••"
+                value={password} onChange={e => { setPassword(e.target.value); setError(''); }} />
+            </div>
+            {error && <p style={{ fontSize: 13, color: '#c0392b', letterSpacing: '-0.12px' }}>{error}</p>}
+            <button type="submit" className="btn-blue" disabled={loading} style={{ marginTop: 4, padding: '13px', fontSize: 16, opacity: loading ? 0.6 : 1 }}>
+              {loading ? 'Signing in…' : 'Sign In'}
+            </button>
+          </form>
+
+          <div style={{ marginTop: 28, paddingTop: 24, borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+            <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginBottom: 12, textAlign: 'center' }}>Demo accounts</p>
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn-ghost" onClick={() => demo('john@example.com', 'client123')} style={{ flex: 1, fontSize: 13 }}>
+                john@example.com
+              </button>
+              <button className="btn-ghost" onClick={() => demo('sarah@example.com', 'peak2026')} style={{ flex: 1, fontSize: 13 }}>
+                sarah@example.com
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Order Form ───────────────────────────────────────────────────────────────
+const OrderForm = ({ userData, onOrderPlaced }) => {
+  const [product, setProduct] = React.useState('');
+  const [qty, setQty] = React.useState(1);
+  const [notes, setNotes] = React.useState('');
+  const [success, setSuccess] = React.useState(false);
+
+  const submit = async (e) => {
+    e.preventDefault();
+    if (!product) return;
+
+    let insertedOrder = null;
+    // 1. Insert order row in Supabase
+    try {
+      const { data: { user } } = await sb.auth.getUser();
+      if (user) {
+        const { data, error } = await sb.from('orders').insert({
+          client_id: user.id,
+          product,
+          quantity: qty,
+          notes: notes || null,
+          status: 'pending',
+        }).select().single();
+        if (error) throw error;
+        insertedOrder = data;
+      }
+    } catch (err) {
+      console.error('Order insert failed:', err);
+    }
+
+    // 2. Email/SMS notification via Formspree
+    try {
+      await fetch('https://formspree.io/f/xojyzgbq', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          _subject: `New Order: ${product} × ${qty}`,
+          client_name: userData?.name && userData.name !== userData?.email ? userData.name : '(no name on file)',
+          client_email: userData?.email || 'Unknown',
+          client_phone: userData?.phone || '(no phone on file)',
+          shipping_address: userData?.address || '(no address on file — please contact client)',
+          product,
+          quantity: qty,
+          notes: notes || '(none)',
+          submitted_at: new Date().toLocaleString(),
+        }),
+      });
+    } catch (err) {
+      console.error('Notification failed:', err);
+    }
+
+    onOrderPlaced({
+      id: insertedOrder?.id,
+      item: product,
+      qty,
+      notes,
+    });
+    setProduct(''); setQty(1); setNotes('');
+    setSuccess(true);
+    setTimeout(() => setSuccess(false), 3000);
+  };
+
+  return (
+    <div className="fade-in">
+      <h2 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', marginBottom: 6 }}>Order Form</h2>
+      <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.45)', marginBottom: 28 }}>Request supplements or services.</p>
+
+      <div className="card" style={{ maxWidth: 560 }}>
+        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Product / Service</label>
+            <select className="field-input" value={product} onChange={e => setProduct(e.target.value)}>
+              <option value="">Select a product</option>
+              {PRODUCTS.map(p => <option key={p}>{p}</option>)}
+            </select>
+          </div>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Quantity</label>
+            <input className="field-input" type="number" min="1" max="20"
+              value={qty} onChange={e => setQty(parseInt(e.target.value))}
+              style={{ width: 120 }} />
+          </div>
+          <div>
+            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Special Notes <span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.35)' }}>(optional)</span></label>
+            <textarea className="field-input" rows="3" placeholder="Allergies, preferences, timing requests…"
+              value={notes} onChange={e => setNotes(e.target.value)}
+              style={{ resize: 'vertical', minHeight: 80 }} />
+          </div>
+
+          {success && (
+            <div style={{
+              background: 'rgba(52,199,89,0.10)', border: '1px solid rgba(52,199,89,0.25)',
+              borderRadius: 10, padding: '12px 16px',
+              display: 'flex', alignItems: 'center', gap: 10,
+            }}>
+              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                <circle cx="9" cy="9" r="8" stroke="#1a8a3c" strokeWidth="1.5"/>
+                <path d="M5.5 9l2.5 2.5 4-4" stroke="#1a8a3c" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <span style={{ fontSize: 14, color: '#1a8a3c', fontWeight: 500 }}>Order placed successfully.</span>
+            </div>
+          )}
+
+          <button type="submit" className="btn-blue" disabled={!product}
+            style={{ alignSelf: 'flex-start', padding: '12px 28px', opacity: !product ? 0.4 : 1, cursor: !product ? 'not-allowed' : 'pointer' }}>
+            Place Order
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// ─── Purchase History ─────────────────────────────────────────────────────────
+const PurchaseHistory = ({ orders }) => (
+  <div className="fade-in">
+    <h2 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', marginBottom: 6 }}>Purchase History</h2>
+    <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.45)', marginBottom: 28 }}>{orders.length} orders total.</p>
+
+    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div style={{ overflowX: 'auto' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ background: 'rgba(255,255,255,0.04)', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+              {['Date', 'Item', 'Qty', 'Status'].map(h => (
+                <th key={h} style={{
+                  padding: '13px 20px', textAlign: 'left',
+                  fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.45)',
+                  letterSpacing: '0.04em', textTransform: 'uppercase',
+                  whiteSpace: 'nowrap',
+                }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {orders.map((o, i) => {
+              const sc = statusColors[o.status] || { bg: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.5)' };
+              return (
+                <tr key={o.id} style={{ borderBottom: i < orders.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
+                  <td style={{ padding: '16px 20px', fontSize: 14, color: 'rgba(255,255,255,0.45)', whiteSpace: 'nowrap' }}>{o.date}</td>
+                  <td style={{ padding: '16px 20px', fontSize: 15, fontWeight: 500, color: '#f5f5f7' }}>{o.item}</td>
+                  <td style={{ padding: '16px 20px', fontSize: 15, color: '#f5f5f7' }}>{o.qty}</td>
+                  <td style={{ padding: '16px 20px' }}>
+                    <span className="tag" style={{ background: sc.bg, color: sc.color }}>{o.status}</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+);
+
+// ─── Nutrition Plan ───────────────────────────────────────────────────────────
+const NutritionPlan = ({ plan }) => {
+  const [activeDay, setActiveDay] = React.useState(0);
+  const macros = [
+    { label: 'Calories', value: plan.macros.calories, unit: 'kcal', color: '#0066cc' },
+    { label: 'Protein', value: plan.macros.protein, unit: 'g', color: '#34c759' },
+    { label: 'Carbs', value: plan.macros.carbs, unit: 'g', color: '#ff9f0a' },
+    { label: 'Fat', value: plan.macros.fat, unit: 'g', color: '#ff3b30' },
+  ];
+
+  return (
+    <div className="fade-in">
+      <h2 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', marginBottom: 4 }}>Nutrition Plan</h2>
+      <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.45)', marginBottom: 28 }}>Goal: {plan.goal}</p>
+
+      {/* Macro cards */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: 12, marginBottom: 28 }}>
+        {macros.map(m => (
+          <div key={m.label} className="card" style={{ padding: '20px', textAlign: 'center' }}>
+            <div style={{ fontSize: 28, fontWeight: 700, color: m.color, letterSpacing: '-0.03em', lineHeight: 1 }}>{m.value}</div>
+            <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2 }}>{m.unit}</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: '#f5f5f7', marginTop: 6 }}>{m.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* Day tabs */}
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 20 }}>
+        {plan.days.map((d, i) => (
+          <button key={d.day} onClick={() => setActiveDay(i)}
+            style={{
+              borderRadius: 980, padding: '7px 16px', fontSize: 13, cursor: 'pointer', border: 'none',
+              fontFamily: 'inherit', fontWeight: activeDay === i ? 600 : 400,
+              background: activeDay === i ? '#0066cc' : 'rgba(255,255,255,0.07)',
+              color: activeDay === i ? '#fff' : 'rgba(255,255,255,0.7)',
+              boxShadow: 'none',
+              transition: 'all 0.12s',
+            }}>
+            {d.day.slice(0, 3)}
+          </button>
+        ))}
+      </div>
+
+      <div className="card">
+        <h3 style={{ fontSize: 17, fontWeight: 600, marginBottom: 16, color: '#f5f5f7' }}>
+          {plan.days[activeDay].day}
+        </h3>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {plan.days[activeDay].meals.map((meal, i) => (
+            <div key={i} style={{
+              display: 'flex', alignItems: 'flex-start', gap: 12,
+              padding: '12px 16px', background: 'rgba(255,255,255,0.05)', borderRadius: 10,
+            }}>
+              <div style={{
+                width: 24, height: 24, borderRadius: '50%', background: '#0066cc',
+                color: '#fff', fontSize: 11, fontWeight: 700,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                flexShrink: 0, marginTop: 1,
+              }}>{i + 1}</div>
+              <span style={{ fontSize: 15, color: '#f5f5f7', lineHeight: 1.5 }}>{meal}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// ─── Workout Plan ─────────────────────────────────────────────────────────────
+const WorkoutPlan = ({ plan }) => {
+  const [activeDay, setActiveDay] = React.useState(0);
+  const day = plan.days[activeDay];
+
+  return (
+    <div className="fade-in">
+      <h2 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', marginBottom: 4 }}>Workout Plan</h2>
+      <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.45)', marginBottom: 28 }}>Goal: {plan.goal}</p>
+
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 20 }}>
+        {plan.days.map((d, i) => (
+          <button key={d.day} onClick={() => setActiveDay(i)}
+            style={{
+              borderRadius: 980, padding: '7px 16px', fontSize: 13, cursor: 'pointer', border: 'none',
+              fontFamily: 'inherit', fontWeight: activeDay === i ? 600 : 400,
+              background: activeDay === i ? '#2997ff' : 'rgba(255,255,255,0.07)',
+              color: activeDay === i ? '#fff' : 'rgba(255,255,255,0.7)',
+              boxShadow: 'none',
+              transition: 'all 0.12s',
+            }}>
+            {d.day.slice(0, 3)}
+          </button>
+        ))}
+      </div>
+
+      <div className="card">
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
+          <div>
+            <h3 style={{ fontSize: 17, fontWeight: 600, color: '#f5f5f7' }}>{day.day}</h3>
+            <p style={{ fontSize: 14, color: '#0066cc', fontWeight: 500, marginTop: 2 }}>{day.focus}</p>
+          </div>
+        </div>
+
+        {day.exercises.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: '32px 0', color: 'rgba(255,255,255,0.4)', fontSize: 15 }}>
+            Rest day. Recovery is training.
+          </div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+                  {['Exercise', 'Sets', 'Reps', 'Rest'].map(h => (
+                    <th key={h} style={{
+                      padding: '8px 12px', textAlign: 'left',
+                      fontSize: 11, fontWeight: 600, color: 'rgba(0,0,0,0.45)',
+                      letterSpacing: '0.04em', textTransform: 'uppercase',
+                    }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {day.exercises.map((ex, i) => (
+                  <tr key={i} style={{ borderBottom: i < day.exercises.length - 1 ? '1px solid rgba(255,255,255,0.06)' : 'none' }}>
+                    <td style={{ padding: '13px 12px', fontSize: 15, fontWeight: 500, color: '#f5f5f7' }}>{ex.name}</td>
+                    <td style={{ padding: '13px 12px', fontSize: 14, color: '#f5f5f7' }}>{ex.sets}</td>
+                    <td style={{ padding: '13px 12px', fontSize: 14, color: '#f5f5f7' }}>{ex.reps}</td>
+                    <td style={{ padding: '13px 12px', fontSize: 14, color: 'rgba(255,255,255,0.45)' }}>{ex.rest}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── Blood Work Upload ─────────────────────────────────────────────────────────
+const BloodWork = ({ userId, files, onUpload }) => {
+  const [dragging, setDragging] = React.useState(false);
+  const [newFile, setNewFile] = React.useState(null);
+  const [error, setError] = React.useState('');
+  const [uploading, setUploading] = React.useState(false);
+  const inputRef = React.useRef();
+
+  const handleFile = async (file) => {
+    if (!file) return;
+    setError('');
+    setUploading(true);
+    try {
+      const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+      const path = `${userId}/${Date.now()}_${safeName}`;
+      const { error: upErr } = await sb.storage.from('bloodwork').upload(path, file);
+      if (upErr) throw upErr;
+      const { error: dbErr } = await sb.from('bloodwork_files').insert({
+        client_id: userId,
+        filename: file.name,
+        storage_path: path,
+        uploaded_by: userId,
+      });
+      if (dbErr) throw dbErr;
+      setNewFile(file.name);
+      onUpload(file.name);
+    } catch (err) {
+      console.error('Upload failed:', err);
+      setError(err.message || 'Upload failed.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <div className="fade-in">
+      <h2 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', marginBottom: 6 }}>Blood Work</h2>
+      <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.45)', marginBottom: 28 }}>Upload lab results for review by your specialist.</p>
+
+      {/* Upload zone */}
+      <div
+        onClick={() => inputRef.current.click()}
+        onDragOver={e => { e.preventDefault(); setDragging(true); }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={e => { e.preventDefault(); setDragging(false); handleFile(e.dataTransfer.files[0]); }}
+        style={{
+          border: `2px dashed ${dragging ? '#2997ff' : 'rgba(255,255,255,0.12)'}`,
+          borderRadius: 16, padding: '48px 24px', textAlign: 'center',
+          background: dragging ? 'rgba(41,151,255,0.07)' : 'rgba(255,255,255,0.03)',
+          cursor: 'pointer', transition: 'all 0.15s', marginBottom: 24,
+        }}>
+        <input ref={inputRef} type="file" accept=".pdf,image/*" style={{ display: 'none' }}
+          onChange={e => handleFile(e.target.files[0])} />
+        <div style={{
+          width: 52, height: 52, borderRadius: '50%', background: 'rgba(0,102,204,0.08)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          margin: '0 auto 16px',
+        }}>
+          <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+            <path d="M11 14V4M7 8l4-4 4 4" stroke="#0066cc" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M4 16v1a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-1" stroke="#0066cc" strokeWidth="1.7" strokeLinecap="round"/>
+          </svg>
+        </div>
+        <p style={{ fontSize: 16, fontWeight: 500, color: '#f5f5f7', marginBottom: 6 }}>Upload lab results</p>
+        <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)' }}>PDF or image · Drag & drop or click to browse</p>
+      </div>
+
+      {newFile && !error && (
+        <div style={{
+          background: 'rgba(52,199,89,0.09)', border: '1px solid rgba(52,199,89,0.25)',
+          borderRadius: 10, padding: '12px 16px', marginBottom: 20,
+          display: 'flex', alignItems: 'center', gap: 10,
+        }}>
+          <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+            <circle cx="9" cy="9" r="8" stroke="#1a8a3c" strokeWidth="1.5"/>
+            <path d="M5.5 9l2.5 2.5 4-4" stroke="#1a8a3c" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+          </svg>
+          <span style={{ fontSize: 14, color: '#1a8a3c' }}><strong>{newFile}</strong> uploaded successfully.</span>
+        </div>
+      )}
+
+      {error && (
+        <div style={{
+          background: 'rgba(255,59,48,0.10)', border: '1px solid rgba(255,59,48,0.3)',
+          borderRadius: 10, padding: '12px 16px', marginBottom: 20,
+        }}>
+          <span style={{ fontSize: 14, color: '#ff453a' }}>{error}</span>
+        </div>
+      )}
+
+      {uploading && (
+        <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 16 }}>
+          Uploading…
+        </div>
+      )}
+
+      {/* File list */}
+      <div className="card">
+        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 16 }}>Uploaded Files</h3>
+        {files.length === 0 ? (
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.4)', textAlign: 'center', padding: '20px 0' }}>No files yet.</p>
+        ) : (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {files.map((f, i) => (
+              <div key={i} style={{
+                display: 'flex', alignItems: 'center', gap: 12,
+                padding: '12px 14px', background: 'rgba(255,255,255,0.05)', borderRadius: 10,
+              }}>
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <path d="M5 2h7l4 4v12a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V3a1 1 0 0 1 1-1z" stroke="#0066cc" strokeWidth="1.4"/>
+                  <path d="M12 2v4h4" stroke="#0066cc" strokeWidth="1.4" strokeLinejoin="round"/>
+                </svg>
+                <span style={{ fontSize: 14, color: '#f5f5f7', flex: 1 }}>{f}</span>
+                <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.35)' }}>PDF</span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// ─── Portal Shell ─────────────────────────────────────────────────────────────
+const Portal = ({ userId, onLogout }) => {
+  const [activeTab, setActiveTab] = React.useState('order');
+  const [userData, setUserData] = React.useState(null);
+  const [loadError, setLoadError] = React.useState('');
+  const [unread, setUnread] = React.useState({});  // { workout: [ids], nutrition: [ids] }
+
+  // Map notification kind → tab id
+  const NOTIF_TAB = { workout_updated: 'workout', nutrition_updated: 'nutrition' };
+
+  // Load unread notifications
+  const loadNotifications = React.useCallback(async () => {
+    try {
+      const { data } = await sb.from('client_notifications')
+        .select('id, kind').eq('client_id', userId).is('read_at', null);
+      const map = {};
+      (data || []).forEach(n => {
+        const tab = NOTIF_TAB[n.kind];
+        if (!tab) return;
+        if (!map[tab]) map[tab] = [];
+        map[tab].push(n.id);
+      });
+      setUnread(map);
+    } catch (e) { /* table may not exist yet — silent */ }
+  }, [userId]);
+  React.useEffect(() => { if (userId) loadNotifications(); }, [userId, loadNotifications]);
+
+  // Wrapper that marks notifications for a tab as read
+  const switchTab = async (tabId) => {
+    setActiveTab(tabId);
+    const ids = unread[tabId];
+    if (ids && ids.length) {
+      setUnread(u => { const n = {...u}; delete n[tabId]; return n; });
+      try { await sb.from('client_notifications').update({ read_at: new Date().toISOString() }).in('id', ids); } catch {}
+    }
+  };
+
+  // Load all data for this client from Supabase
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [profileRes, ordersRes, nutritionRes, workoutRes, bloodworkRes] = await Promise.all([
+          sb.from('clients').select('*').eq('id', userId).single(),
+          sb.from('orders').select('*').eq('client_id', userId).order('ordered_at', { ascending: false }),
+          sb.from('nutrition_plans').select('*').eq('client_id', userId).eq('active', true).order('created_at', { ascending: false }).limit(1),
+          sb.from('workout_plans').select('*').eq('client_id', userId).eq('active', true).order('created_at', { ascending: false }).limit(1),
+          sb.from('bloodwork_files').select('*').eq('client_id', userId).order('uploaded_at', { ascending: false }),
+        ]);
+        if (cancelled) return;
+
+        if (profileRes.error) throw profileRes.error;
+
+        // Map Supabase rows → shape the rest of the portal expects
+        const statusMap = { pending: 'Processing', invoiced: 'Processing', paid: 'Processing', shipped: 'In Transit', completed: 'Delivered', cancelled: 'Cancelled' };
+        const orders = (ordersRes.data || []).map(o => ({
+          id: o.id,
+          date: o.ordered_at ? o.ordered_at.split('T')[0] : '',
+          item: o.product,
+          qty: o.quantity,
+          status: statusMap[o.status] || 'Processing',
+        }));
+
+        const np = (nutritionRes.data || [])[0];
+        const nutrition = np ? {
+          goal: np.title || 'Current Plan',
+          macros: {
+            calories: np.daily_calories || 0,
+            protein: np.protein_g || 0,
+            carbs: np.carbs_g || 0,
+            fat: np.fats_g || 0,
+          },
+          days: Array.isArray(np.plan_data) ? np.plan_data : [],
+        } : null;
+
+        const wp = (workoutRes.data || [])[0];
+        const workout = wp ? {
+          goal: wp.title || 'Current Program',
+          days: Array.isArray(wp.plan_data) ? wp.plan_data : [],
+        } : null;
+
+        const bloodwork = (bloodworkRes.data || []).map(b => b.filename);
+
+        setUserData({
+          id: profileRes.data.id,
+          name: profileRes.data.name || profileRes.data.email,
+          email: profileRes.data.email,
+          phone: profileRes.data.phone,
+          address: profileRes.data.address,
+          orders, nutrition, workout, bloodwork,
+        });
+      } catch (err) {
+        console.error('Load failed:', err);
+        if (!cancelled) setLoadError(err.message || 'Failed to load your data.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [userId]);
+
+  if (loadError) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#000', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
+        <div className="card" style={{ maxWidth: 420, textAlign: 'center' }}>
+          <h2 style={{ fontSize: 20, marginBottom: 8 }}>Couldn't load your data</h2>
+          <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.5)', marginBottom: 20 }}>{loadError}</p>
+          <button className="btn-blue" onClick={onLogout}>Sign out</button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!userData) {
+    return (
+      <div style={{ minHeight: '100vh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.4)' }}>
+        Loading…
+      </div>
+    );
+  }
+
+  const tabs = [
+    { id: 'order',    label: 'Order Form',        icon: icons.order },
+    { id: 'history',  label: 'Purchase History',   icon: icons.history },
+    { id: 'nutrition',label: 'Nutrition Plan',     icon: icons.nutrition },
+    { id: 'workout',  label: 'Workout Plan',       icon: icons.workout },
+    { id: 'weighin',  label: 'Weekly Weigh-In',    icon: icons.weighin },
+    { id: 'blood',    label: 'Blood Work',         icon: icons.blood },
+  ];
+
+  const addOrder = (order) => {
+    // Optimistically add to UI; OrderForm has already inserted to Supabase
+    const newOrder = {
+      id: order.id || `tmp-${Date.now()}`,
+      date: new Date().toISOString().split('T')[0],
+      status: 'Processing',
+      item: order.item,
+      qty: order.qty,
+    };
+    setUserData(d => ({ ...d, orders: [newOrder, ...d.orders] }));
+  };
+
+  const addFile = (name) => {
+    setUserData(d => ({ ...d, bloodwork: [name, ...d.bloodwork] }));
+  };
+
+  return (
+    <div style={{ display: 'flex', minHeight: '100vh', background: '#0a0a0a' }}>
+      {/* Sidebar */}
+      <aside className="sidebar" style={{
+        width: 260, flexShrink: 0, background: '#111113',
+        borderRight: '1px solid rgba(255,255,255,0.07)',
+        display: 'flex', flexDirection: 'column',
+        position: 'sticky', top: 0, height: '100vh', overflowY: 'auto',
+      }}>
+        {/* Logo */}
+        <div style={{ padding: '28px 24px 20px', borderBottom: '1px solid rgba(255,255,255,0.07)' }}>
+          <img src="1_5058098532557259934/PNG/VV/Asset 1@4x.png" alt="PeakForm Bio"
+            style={{ height: 110, marginBottom: 20 }} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: '50%', background: '#0066cc',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              color: '#fff', fontSize: 14, fontWeight: 700, flexShrink: 0,
+            }}>{userData.name.split(' ').map(n => n[0]).join('')}</div>
+            <div>
+              <p style={{ fontSize: 14, fontWeight: 600, color: '#f5f5f7', lineHeight: 1.2 }}>{userData.name}</p>
+              <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>{userData.email}</p>
+            </div>
+          </div>
+        </div>
+
+        {/* Nav */}
+        <nav style={{ padding: '16px 12px', flex: 1 }}>
+          {tabs.map(t => {
+            const hasUnread = unread[t.id] && unread[t.id].length > 0;
+            return (
+              <button key={t.id} onClick={() => switchTab(t.id)}
+                style={{
+                  width: '100%', display: 'flex', alignItems: 'center', gap: 12,
+                  padding: '11px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
+                  fontFamily: 'inherit', fontSize: 14, fontWeight: activeTab === t.id ? 600 : 400,
+                  textAlign: 'left', marginBottom: 2, transition: 'all 0.12s',
+                  background: activeTab === t.id ? 'rgba(41,151,255,0.12)' : 'transparent',
+                  color: activeTab === t.id ? '#2997ff' : 'rgba(255,255,255,0.75)',
+                }}>
+                <span style={{ opacity: activeTab === t.id ? 1 : 0.5 }}>{t.icon}</span>
+                <span style={{ flex: 1 }}>{t.label}</span>
+                {hasUnread && (
+                  <span title="Updated" style={{
+                    width: 8, height: 8, borderRadius: '50%', background: '#ff453a',
+                    boxShadow: '0 0 0 3px rgba(255,69,58,0.18)', flexShrink: 0,
+                  }} />
+                )}
+              </button>
+            );
+          })}
+        </nav>
+
+        {/* Logout */}
+        <div style={{ padding: '16px 12px', borderTop: '1px solid rgba(255,255,255,0.07)' }}>
+          <button onClick={onLogout}
+            style={{
+              width: '100%', display: 'flex', alignItems: 'center', gap: 10,
+              padding: '10px 14px', borderRadius: 10, border: 'none', cursor: 'pointer',
+              fontFamily: 'inherit', fontSize: 14, color: 'rgba(255,255,255,0.45)',
+              background: 'transparent', transition: 'all 0.12s',
+            }}
+            onMouseEnter={e => e.currentTarget.style.background='rgba(255,255,255,0.06)'}
+            onMouseLeave={e => e.currentTarget.style.background='transparent'}
+          >
+            {icons.logout} Sign out
+          </button>
+        </div>
+      </aside>
+
+      {/* Mobile tab bar */}
+      <div className="mobile-tabs" style={{
+        display: 'none', position: 'fixed', bottom: 0, left: 0, right: 0, zIndex: 100,
+        background: 'rgba(10,10,10,0.95)', backdropFilter: 'blur(12px)',
+        borderTop: '1px solid rgba(255,255,255,0.08)',
+        padding: '8px 4px',
+      }}>
+        {tabs.map(t => {
+          const hasUnread = unread[t.id] && unread[t.id].length > 0;
+          return (
+            <button key={t.id} onClick={() => switchTab(t.id)}
+              style={{
+                flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4,
+                background: 'none', border: 'none', cursor: 'pointer', padding: '6px 2px',
+                color: activeTab === t.id ? '#2997ff' : 'rgba(255,255,255,0.35)',
+                fontFamily: 'inherit', position: 'relative',
+              }}>
+              {t.icon}
+              {hasUnread && (
+                <span style={{
+                  position: 'absolute', top: 2, right: '50%', marginRight: -16,
+                  width: 7, height: 7, borderRadius: '50%', background: '#ff453a',
+                  boxShadow: '0 0 0 2px #0a0a0a',
+                }} />
+              )}
+              <span style={{ fontSize: 9, fontWeight: activeTab === t.id ? 600 : 400 }}>
+                {t.label.split(' ')[0]}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Main content */}
+      <main style={{ flex: 1, padding: '48px 40px', maxWidth: 960, paddingBottom: 80, background: '#0a0a0a' }}>
+        {/* Top bar */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 40 }}>
+          <div>
+            <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.35)', letterSpacing: '-0.12px' }}>
+              {new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}
+            </p>
+            <h1 style={{ fontSize: 22, fontWeight: 600, color: '#f5f5f7', letterSpacing: '-0.025em' }}>
+              Welcome back, {userData.name.split(' ')[0]}.
+            </h1>
+          </div>
+        </div>
+
+        {activeTab === 'order'     && <OrderForm userData={userData} onOrderPlaced={addOrder} />}
+        {activeTab === 'history'   && <PurchaseHistory orders={userData.orders} />}
+        {activeTab === 'nutrition' && (userData.nutrition
+          ? <NutritionPlan plan={userData.nutrition} />
+          : <EmptyState title="Nutrition Plan" message="Your nutrition plan will appear here once your specialist sets it up." />)}
+        {activeTab === 'workout'   && (userData.workout
+          ? <WorkoutPlan plan={userData.workout} />
+          : <EmptyState title="Workout Plan" message="Your workout plan will appear here once your specialist sets it up." />)}
+        {activeTab === 'weighin'   && <WeighIn sb={sb} userId={userId} />}
+        {activeTab === 'blood'     && <BloodWork userId={userId} files={userData.bloodwork} onUpload={addFile} />}
+      </main>
+    </div>
+  );
+};
+
+// ─── Empty State ──────────────────────────────────────────────────────────────
+const EmptyState = ({ title, message }) => (
+  <div className="fade-in">
+    <h2 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', marginBottom: 6 }}>{title}</h2>
+    <div className="card" style={{ padding: 60, textAlign: 'center' }}>
+      <div style={{
+        width: 56, height: 56, borderRadius: '50%', background: 'rgba(0,102,204,0.12)',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        margin: '0 auto 18px',
+      }}>
+        <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+          <circle cx="11" cy="11" r="9" stroke="#2997ff" strokeWidth="1.6"/>
+          <path d="M11 7v4M11 14.5v.5" stroke="#2997ff" strokeWidth="1.8" strokeLinecap="round"/>
+        </svg>
+      </div>
+      <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.55)', maxWidth: 380, margin: '0 auto', lineHeight: 1.5 }}>{message}</p>
+    </div>
+  </div>
+);
+
+// ─── App ─────────────────────────────────────────────────────────────────────
+const App = () => {
+  const [userId, setUserId] = React.useState(null);
+  const [checking, setChecking] = React.useState(true);
+
+  // Restore session on mount + listen for auth changes
+  React.useEffect(() => {
+    sb.auth.getSession().then(({ data }) => {
+      if (data?.session?.user) setUserId(data.session.user.id);
+      setChecking(false);
+    });
+    const { data: { subscription } } = sb.auth.onAuthStateChange((_event, session) => {
+      setUserId(session?.user?.id || null);
+    });
+    return () => subscription?.unsubscribe();
+  }, []);
+
+  const logout = async () => {
+    await sb.auth.signOut();
+    setUserId(null);
+  };
+
+  if (checking) {
+    return <div style={{ minHeight: '100vh', background: '#0a0a0a', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.4)' }}>Loading…</div>;
+  }
+
+  return userId
+    ? <Portal userId={userId} onLogout={logout} />
+    : <LoginScreen onLogin={setUserId} />;
+};
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>
