@@ -236,6 +236,194 @@ function ProfileEditor({ sb, client, onSaved }) {
           </span>
         )}
       </div>
+
+      <LoginAccessPanel sb={sb} client={data} />
+    </div>
+  );
+}
+
+// ─── Login & Access ──────────────────────────────────────────────────────
+// Two ways to help a client who can't log in:
+//   1. Send them a password-reset email (safe, standard).
+//   2. Set a new password directly via an Edge Function that holds the
+//      service-role key (advanced — requires the function to be deployed).
+function LoginAccessPanel({ sb, client }) {
+  const [busy, setBusy] = React.useState(false);
+  const [msg,  setMsg]  = React.useState(null);  // { kind, text }
+  const [showAdvanced, setShowAdvanced] = React.useState(false);
+  const [newPw, setNewPw] = React.useState('');
+  const [copied, setCopied] = React.useState(false);
+
+  if (!client?.email) return null;
+
+  const portalUrl = window.location.origin
+    + window.location.pathname.replace(/Admin\.html$/, 'ClientPortal.html');
+
+  const sendReset = async () => {
+    setBusy(true); setMsg(null);
+    const { error } = await sb.auth.resetPasswordForEmail(client.email, {
+      redirectTo: portalUrl,
+    });
+    setBusy(false);
+    if (error) setMsg({ kind: 'err', text: 'Could not send reset email: ' + error.message });
+    else       setMsg({ kind: 'ok',  text: `Password-reset email sent to ${client.email}.` });
+  };
+
+  const sendMagicLink = async () => {
+    setBusy(true); setMsg(null);
+    const { error } = await sb.auth.signInWithOtp({
+      email: client.email,
+      options: { shouldCreateUser: false, emailRedirectTo: portalUrl },
+    });
+    setBusy(false);
+    if (error) setMsg({ kind: 'err', text: 'Could not send magic link: ' + error.message });
+    else       setMsg({ kind: 'ok',  text: `One-time sign-in email sent to ${client.email}.` });
+  };
+
+  const setPasswordDirect = async () => {
+    if (!newPw || newPw.length < 8) {
+      setMsg({ kind: 'err', text: 'Password must be at least 8 characters.' });
+      return;
+    }
+    if (!window.SUPABASE_FN_URL) {
+      setMsg({ kind: 'err', text: 'Edge Function URL not configured. See deployment notes in profile-editor.jsx.' });
+      return;
+    }
+    setBusy(true); setMsg(null);
+
+    // Call the admin-set-password Edge Function. The function holds the
+    // service-role key; the browser only sends the user's anon access token
+    // for auth, plus the target email + new password.
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) {
+      setBusy(false);
+      setMsg({ kind: 'err', text: 'Not signed in. Refresh and try again.' });
+      return;
+    }
+
+    try {
+      const res = await fetch(window.SUPABASE_FN_URL + '/admin-set-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + session.access_token,
+        },
+        body: JSON.stringify({ email: client.email, password: newPw }),
+      });
+      const body = await res.json().catch(() => ({}));
+      setBusy(false);
+      if (!res.ok) {
+        setMsg({ kind: 'err', text: body.error || `Failed (HTTP ${res.status}).` });
+        return;
+      }
+      setMsg({
+        kind: 'ok',
+        text: `Password updated for ${client.email}.`,
+        creds: { email: client.email, password: newPw, portalUrl },
+      });
+      setNewPw('');
+    } catch (err) {
+      setBusy(false);
+      setMsg({ kind: 'err', text: 'Network error: ' + (err.message || 'unknown') });
+    }
+  };
+
+  const copy = async (text, key) => {
+    try { await navigator.clipboard.writeText(text); }
+    catch { window.prompt('Copy this:', text); return; }
+    setCopied(key);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div style={{
+      marginTop: 28, paddingTop: 20,
+      borderTop: '1px solid rgba(255,255,255,0.08)',
+    }}>
+      <h4 style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>Login &amp; Access</h4>
+      <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)', marginBottom: 14, lineHeight: 1.55 }}>
+        Help this client sign in. For security reasons we can't show you their existing password — choose one of the actions below.
+      </p>
+
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 12 }}>
+        <button type="button" className="btn-blue" disabled={busy} onClick={sendReset}>
+          Send password-reset email
+        </button>
+        <button type="button" className="btn-ghost" disabled={busy} onClick={sendMagicLink}>
+          Send one-time sign-in link
+        </button>
+        <button type="button" className="btn-ghost" onClick={() => { setShowAdvanced(s => !s); setMsg(null); }}>
+          {showAdvanced ? 'Hide advanced' : 'Set password directly (advanced)'}
+        </button>
+      </div>
+
+      {showAdvanced && (
+        <div style={{
+          background: 'rgba(255,159,10,0.06)',
+          border: '1px solid rgba(255,159,10,0.25)',
+          borderRadius: 8, padding: 14, marginBottom: 12,
+        }}>
+          <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.7)', lineHeight: 1.55, marginBottom: 10 }}>
+            <strong style={{ color: '#ff9f0a' }}>Heads up:</strong> this immediately overwrites the client's password.
+            Tell them the new password yourself (text/email). Requires the <code>admin-set-password</code> Edge Function to be deployed.
+          </p>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              placeholder="New password (≥ 8 chars)"
+              value={newPw}
+              onChange={e => setNewPw(e.target.value)}
+              style={{
+                flex: '1 1 240px', minWidth: 200,
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.15)',
+                borderRadius: 6, padding: '8px 10px',
+                color: '#f5f5f7', fontSize: 13, outline: 'none', fontFamily: 'inherit',
+              }}
+            />
+            <button type="button" className="btn-blue" disabled={busy} onClick={setPasswordDirect}>
+              {busy ? 'Setting…' : 'Set password now'}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {msg && (
+        <div style={{
+          padding: '10px 14px', borderRadius: 8, fontSize: 13, lineHeight: 1.55,
+          background: msg.kind === 'ok' ? 'rgba(52,199,89,0.10)' : 'rgba(255,69,58,0.10)',
+          border:     msg.kind === 'ok' ? '1px solid rgba(52,199,89,0.30)' : '1px solid rgba(255,69,58,0.30)',
+          color:      msg.kind === 'ok' ? '#34c759' : '#ff453a',
+        }}>
+          <div>{msg.text}</div>
+          {msg.creds && (
+            <div style={{
+              marginTop: 10, padding: 10, borderRadius: 6,
+              background: 'rgba(0,0,0,0.3)', color: '#f5f5f7',
+              fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+              fontSize: 12, lineHeight: 1.7,
+            }}>
+              <div>Email: {msg.creds.email}</div>
+              <div>Password: {msg.creds.password}</div>
+              <div style={{ color: 'rgba(255,255,255,0.55)' }}>Portal: {msg.creds.portalUrl}</div>
+              <button type="button"
+                onClick={() => copy(
+                  `Welcome to PeakForm Bio. Sign in here:\n${msg.creds.portalUrl}\n\nEmail: ${msg.creds.email}\nPassword: ${msg.creds.password}\n\nUse the "Use email & password" option on the sign-in screen.`,
+                  'welcome'
+                )}
+                style={{
+                  marginTop: 8, width: '100%',
+                  background: 'rgba(0,102,204,0.25)',
+                  border: '1px solid rgba(0,102,204,0.45)',
+                  borderRadius: 4, color: '#fff', fontSize: 11,
+                  padding: '4px 10px', cursor: 'pointer',
+                }}>
+                {copied === 'welcome' ? '✓ Copied welcome message' : 'Copy welcome message'}
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
