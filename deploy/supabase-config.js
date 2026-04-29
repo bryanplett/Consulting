@@ -8,4 +8,4 @@
 // If you don't deploy any Edge Functions yet, leave this file alone — the
 // "Set password directly" advanced button will just show a friendly error.
 
-window.SUPABASE_FN_URL = "";   // e.g. "https://xyzabcd.supabase.co/functions/v1"
+window.SUPABASE_FN_URL = "https://zfsbppflcnqwdafscwvj.supabase.co/functions/v1";
