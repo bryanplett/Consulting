@@ -464,12 +464,408 @@ const LoginScreen = ({ onLogin }) => {
   );
 };
 
+// ─── Portal Catalog ──────────────────────────────────────────────────────────
+// Categorized product browser using Option-3 reveal cards. Maps the user's
+// pricelist labels (e.g. "Tirzepatide — 20mg — $175") into the correct
+// category. When clicked, the card sets the selected product on the parent
+// OrderForm.
+
+const CATEGORY_MAP = [
+  {
+    id: 'metabolic', title: 'Metabolic / Weight Management', tint: '#ff9f0a',
+    matches: ['retatrutide', 'tirzepatide', 'semaglutide', 'cagrilintide', '5 amino', 'klow'],
+    blurbs: {
+      retatrutide: 'Triple agonist (GLP-1/GIP/glucagon) for advanced metabolic support.',
+      tirzepatide: 'Dual GIP/GLP-1 receptor agonist for weight management.',
+      semaglutide: 'GLP-1 receptor agonist for appetite regulation and metabolic health.',
+      cagrilintide: 'Long-acting amylin analog supporting satiety.',
+      '5 amino': 'Targets NNMT to support fat metabolism and metabolic flexibility.',
+      klow: 'Multi-peptide blend for metabolic and recovery support.',
+    },
+  },
+  {
+    id: 'growth', title: 'Growth Hormone / Recovery / Muscle', tint: '#34c759',
+    matches: ['cjc', 'ipamorelin', 'tesamorelin', 'ghrp', 'igf', 'bpc', 'tb-500', 'tb 500', 'wolverine'],
+    blurbs: {
+      cjc: 'GHRH analog supporting endogenous GH pulses and recovery.',
+      ipamorelin: 'Selective GH secretagogue with minimal cortisol impact.',
+      tesamorelin: 'GHRH analog for visceral fat reduction.',
+      ghrp: 'Growth hormone releasing peptide supporting GH and IGF-1.',
+      igf: 'Long-acting IGF-1 analog for tissue repair and lean muscle.',
+      bpc: 'Body protection compound — accelerates tissue repair.',
+      'tb-500': 'Thymosin beta-4 fragment for cellular regeneration.',
+      'tb 500': 'Thymosin beta-4 fragment for cellular regeneration.',
+      wolverine: 'Recovery-focused peptide blend.',
+    },
+  },
+  {
+    id: 'longevity', title: 'Longevity / Cellular Health / Mitochondrial', tint: '#bf5af2',
+    matches: ['nad', 'ss-31', 'ss 31', 'mots', 'epithalon'],
+    blurbs: {
+      nad: 'Foundational coenzyme for cellular energy and DNA repair.',
+      'ss-31': 'Cardiolipin-binding peptide that protects mitochondria.',
+      'ss 31': 'Cardiolipin-binding peptide that protects mitochondria.',
+      mots: 'Mitochondrial-derived peptide supporting metabolic health.',
+      epithalon: 'Telomerase activator studied for cellular aging support.',
+    },
+  },
+  {
+    id: 'cognitive', title: 'Cognitive / Mood / Sleep', tint: '#2997ff',
+    matches: ['selank', 'semax', 'dsip', 'semax-selank', 'semax selank'],
+    blurbs: {
+      selank: 'Anxiolytic peptide supporting calm focus and stress resilience.',
+      semax: 'Nootropic peptide supporting attention, memory, and BDNF.',
+      'semax-selank': 'Combined nootropic + anxiolytic — focus and calm in one.',
+      'semax selank': 'Combined nootropic + anxiolytic — focus and calm in one.',
+      dsip: 'Delta sleep-inducing peptide for restorative sleep.',
+    },
+  },
+  {
+    id: 'beauty', title: 'Skin / Beauty / Anti-Aging', tint: '#ff375f',
+    matches: ['ghk', 'snap', 'kpv'],
+    blurbs: {
+      ghk: 'Copper peptide for collagen synthesis and skin repair.',
+      snap: 'Topical peptide that softens expression lines.',
+      kpv: 'Anti-inflammatory tripeptide for skin and gut health.',
+    },
+  },
+  {
+    id: 'hormonal', title: 'Hormonal / Sexual Wellness', tint: '#ff6482',
+    matches: ['hcg', 'pt-141', 'pt 141'],
+    blurbs: {
+      hcg: 'Human chorionic gonadotropin for endogenous hormone support.',
+      'pt-141': 'Melanocortin agonist supporting sexual response.',
+      'pt 141': 'Melanocortin agonist supporting sexual response.',
+    },
+  },
+  {
+    id: 'programs', title: 'Programs / Services', tint: '#5ac8fa',
+    matches: ['nutrition plan', 'workout', 'hormone', 'bloodwork'],
+    blurbs: {
+      'nutrition plan': 'Custom macros, meal timing, and habit framework.',
+      workout: 'Periodized program for your schedule and goals.',
+      hormone: 'Comprehensive hormonal & bloodwork analysis.',
+      bloodwork: 'Comprehensive hormonal & bloodwork analysis.',
+    },
+  },
+];
+
+const categorize = (label) => {
+  const lower = label.toLowerCase();
+  for (const cat of CATEGORY_MAP) {
+    for (const m of cat.matches) {
+      if (lower.includes(m)) {
+        // Find matching blurb (longest match wins)
+        let blurb = '';
+        for (const key of Object.keys(cat.blurbs)) {
+          if (lower.includes(key) && key.length > 0) blurb = cat.blurbs[key];
+        }
+        return { categoryId: cat.id, blurb };
+      }
+    }
+  }
+  return { categoryId: 'other', blurb: '' };
+};
+
+// Parse "Name — Strength — $Price" into parts.
+// IMPORTANT: split only on em/en dashes — hyphens are part of names like
+// "Semax-Selank Blend", "PT-141", "TB-500", "SS-31".
+const parseLabel = (label) => {
+  // Strip the price segment first so it isn't mistaken for a strength.
+  const priceMatch = label.match(/\$[\d,.]+/);
+  const price = priceMatch ? priceMatch[0] : '';
+  const withoutPrice = price ? label.replace(price, '').replace(/[—–]\s*$/, '').trim() : label;
+  const parts = withoutPrice.split(/[—–]/).map(s => s.trim()).filter(Boolean);
+  return {
+    name: parts[0] || label,
+    strength: parts[1] || '',
+    price,
+    fullLabel: label,
+  };
+};
+
+// Map product name (lowercase substring) to photo path in /assets
+const PRODUCT_PHOTOS = [
+  { match: 'ghk',          src: 'assets/product-ghkcu.png' },
+  { match: 'klow',         src: 'assets/product-klow.png' },
+  { match: 'snap',         src: 'assets/product-snap8.png' },
+  { match: 'kpv',          src: 'assets/product-kpv.png' },
+  { match: 'pt-141',       src: 'assets/product-pt141.png' },
+  { match: 'pt 141',       src: 'assets/product-pt141.png' },
+  { match: 'hcg',          src: 'assets/product-hcg.png' },
+  { match: 'cagrilintide', src: 'assets/product-cagrilintide.png' },
+  { match: '5 amino',      src: 'assets/product-5amino1mq.png' },
+  { match: 'cjc-1295 + ipamorelin', src: 'assets/product-cjc1295-ipamorelin.png' },
+  { match: 'cjc',          src: 'assets/product-cjc1295.png' },
+  { match: 'ipamorelin',   src: 'assets/product-ipamorelin.png' },
+  { match: 'tesamorelin',  src: 'assets/product-tesamorelin.png' },
+  { match: 'ghrp-2',       src: 'assets/product-ghrp2.png' },
+  { match: 'ghrp-6',       src: 'assets/product-ghrp6.png' },
+  { match: 'igf',          src: 'assets/product-igflr3.png' },
+  { match: 'bpc',          src: 'assets/product-bpc157.png' },
+  { match: 'tb-500',       src: 'assets/product-tb500.png' },
+  { match: 'tb 500',       src: 'assets/product-tb500.png' },
+  { match: 'wolverine',    src: 'assets/product-wolverine.png' },
+  { match: 'semax-selank', src: 'assets/product-semax-selank.png' },
+  { match: 'semax selank', src: 'assets/product-semax-selank.png' },
+  { match: 'selank',       src: 'assets/product-selank.png' },
+  { match: 'semax',        src: 'assets/product-semax.png' },
+  { match: 'dsip',         src: 'assets/product-dsip.png' },
+  { match: 'nutrition plan', src: 'assets/program-nutrition.png' },
+  { match: 'workout',      src: 'assets/program-workout.png' },
+];
+
+const getProductPhoto = (label) => {
+  if (!label) return null;
+  const lower = label.toLowerCase();
+  // longest match wins so 'cjc-1295 + ipamorelin' beats 'cjc'
+  let best = null;
+  for (const p of PRODUCT_PHOTOS) {
+    if (lower.includes(p.match)) {
+      if (!best || p.match.length > best.match.length) best = p;
+    }
+  }
+  return best ? best.src : null;
+};
+
+const PortalVial = ({ name, strength, tint, size = 130 }) => (
+  <div style={{
+    width: size, height: size * 1.5, position: 'relative',
+    display: 'flex', flexDirection: 'column', alignItems: 'center',
+    pointerEvents: 'none',
+  }}>
+    <div style={{
+      width: size * 0.4, height: size * 0.18,
+      background: 'linear-gradient(180deg, #d4d4d8 0%, #71717a 50%, #3f3f46 100%)',
+      borderRadius: '6px 6px 2px 2px',
+      boxShadow: 'inset 0 -2px 4px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.5)',
+    }} />
+    <div style={{ width: size * 0.45, height: size * 0.05, background: '#52525b' }} />
+    <div style={{
+      width: size * 0.7, height: size * 0.95,
+      background: `linear-gradient(135deg, rgba(255,255,255,0.18) 0%, ${tint}33 40%, ${tint}55 100%)`,
+      border: '1px solid rgba(255,255,255,0.15)',
+      borderRadius: '4px 4px 12px 12px',
+      position: 'relative', overflow: 'hidden',
+      boxShadow: `inset -8px 0 16px rgba(0,0,0,0.3), inset 8px 0 12px rgba(255,255,255,0.1), 0 8px 24px rgba(0,0,0,0.4)`,
+    }}>
+      <div style={{
+        position: 'absolute', top: '6%', left: '12%', width: '14%', height: '60%',
+        background: 'linear-gradient(180deg, rgba(255,255,255,0.5) 0%, rgba(255,255,255,0) 100%)',
+        borderRadius: '50%', filter: 'blur(2px)',
+      }} />
+      <div style={{
+        position: 'absolute', bottom: 0, left: 0, right: 0, height: '70%',
+        background: `linear-gradient(180deg, ${tint}99 0%, ${tint}cc 100%)`,
+      }} />
+      <div style={{
+        position: 'absolute', bottom: '15%', left: '50%', transform: 'translateX(-50%)',
+        width: '82%', padding: '6px 4px',
+        background: 'rgba(255,255,255,0.94)',
+        borderRadius: 4, textAlign: 'center', color: '#1a1a1c',
+        fontSize: size * 0.085, fontWeight: 700, letterSpacing: 0.3, lineHeight: 1.15,
+      }}>
+        <div style={{ fontSize: size * 0.07, color: '#2997ff', fontWeight: 800 }}>PFB</div>
+        <div style={{ fontSize: size * 0.075 }}>{name.length > 13 ? name.slice(0, 13) + '…' : name}</div>
+        <div style={{ fontSize: size * 0.065, fontWeight: 500, color: '#52525b' }}>{strength}</div>
+      </div>
+    </div>
+  </div>
+);
+
+const PortalRevealCard = ({ parsed, blurb, tint, isSelected, onSelect }) => {
+  const [hover, setHover] = React.useState(false);
+  const active = hover || isSelected;
+  return (
+    <div
+      onMouseEnter={() => setHover(true)}
+      onMouseLeave={() => setHover(false)}
+      onClick={() => onSelect(parsed.fullLabel)}
+      style={{
+        position: 'relative',
+        height: 360,
+        borderRadius: 20,
+        background: `linear-gradient(180deg, #1a1a1c 0%, #0f0f10 100%)`,
+        border: `1px solid ${isSelected ? tint : (hover ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)')}`,
+        boxShadow: isSelected ? `0 0 0 1px ${tint}, 0 12px 30px ${tint}33` : 'none',
+        cursor: 'pointer', overflow: 'hidden',
+        transition: 'border-color 0.3s, box-shadow 0.3s',
+      }}>
+      <div style={{
+        position: 'absolute', inset: '20% 15%',
+        background: `radial-gradient(circle, ${tint}55 0%, transparent 70%)`,
+        opacity: active ? 0.7 : 0,
+        transition: 'opacity 0.4s',
+        filter: 'blur(20px)',
+        pointerEvents: 'none',
+      }} />
+      <div style={{
+        position: 'absolute', top: '6%', left: '50%',
+        transform: `translate(-50%, ${active ? '-26px' : '0'}) rotate(${active ? '-4deg' : '0deg'})`,
+        transition: 'transform 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
+      }}>
+        {(() => {
+          const photo = getProductPhoto(parsed.fullLabel);
+          if (photo) {
+            return (
+              <img src={photo} alt={`${parsed.name} ${parsed.strength}`}
+                style={{
+                  width: 200, height: 200, objectFit: 'cover',
+                  objectPosition: parsed.fullLabel.toLowerCase().includes('plan') || parsed.fullLabel.toLowerCase().includes('workout') ? '14% center' : '32% center',
+                  borderRadius: 14, display: 'block',
+                  filter: active ? 'brightness(1.05)' : 'brightness(0.95)',
+                  transition: 'filter 0.4s',
+                }}
+              />
+            );
+          }
+          return <PortalVial name={parsed.name} strength={parsed.strength} tint={tint} size={120} />;
+        })()}
+      </div>
+      {/* Always-visible info strip: title + strength + price.
+          Sits above the reveal panel so price/mg are NEVER cut off. */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        padding: '14px 18px 16px',
+        background: 'linear-gradient(180deg, rgba(20,20,22,0) 0%, rgba(20,20,22,0.85) 22%, rgba(20,20,22,0.98) 60%, rgba(20,20,22,1) 100%)',
+        opacity: active ? 0 : 1,
+        transition: 'opacity 0.35s',
+        pointerEvents: 'none',
+      }}>
+        <h3 style={{
+          fontSize: parsed.name.length > 22 ? 13 : (parsed.name.length > 17 ? 14 : (parsed.name.length > 13 ? 15 : 17)),
+          fontWeight: 600, color: '#f5f5f7', marginBottom: 8,
+          letterSpacing: '-0.01em',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          lineHeight: 1.2,
+        }}>{parsed.name}</h3>
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          height: 22, gap: 8,
+        }}>
+          <span style={{
+            display: 'inline-block', padding: '2px 8px', borderRadius: 6,
+            background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)',
+            fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.7)',
+            whiteSpace: 'nowrap', letterSpacing: 0.2,
+          }}>{parsed.strength || '—'}</span>
+          <span style={{ flex: 1 }} />
+          <span style={{
+            fontSize: 14, fontWeight: 700, color: tint, whiteSpace: 'nowrap',
+            visibility: parsed.price ? 'visible' : 'hidden',
+          }}>{parsed.price || '$0'}</span>
+        </div>
+      </div>
+
+      {/* Hover-reveal panel: title + strength/price + blurb + Add button. */}
+      <div style={{
+        position: 'absolute', left: 0, right: 0, bottom: 0,
+        background: 'linear-gradient(180deg, rgba(20,20,22,0) 0%, rgba(20,20,22,0.96) 30%, rgba(20,20,22,1) 100%)',
+        padding: '50px 18px 18px',
+        transform: active ? 'translateY(0)' : 'translateY(100%)',
+        transition: 'transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)',
+      }}>
+        <h3 style={{
+          fontSize: parsed.name.length > 22 ? 13 : (parsed.name.length > 17 ? 14 : (parsed.name.length > 13 ? 15 : 17)),
+          fontWeight: 600, color: '#f5f5f7', marginBottom: 8,
+          letterSpacing: '-0.01em',
+          whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+          lineHeight: 1.2,
+        }}>{parsed.name}</h3>
+        <div style={{
+          display: 'flex', alignItems: 'center',
+          marginBottom: 12, height: 22, gap: 8,
+        }}>
+          <span style={{
+            display: 'inline-block', padding: '2px 8px', borderRadius: 6,
+            background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.08)',
+            fontSize: 11, fontWeight: 500, color: 'rgba(255,255,255,0.7)',
+            whiteSpace: 'nowrap', letterSpacing: 0.2,
+          }}>{parsed.strength || '—'}</span>
+          <span style={{ flex: 1 }} />
+          <span style={{
+            fontSize: 14, fontWeight: 700, color: tint, whiteSpace: 'nowrap',
+            visibility: parsed.price ? 'visible' : 'hidden',
+          }}>{parsed.price || '$0'}</span>
+        </div>
+        {blurb && (
+          <p style={{
+            fontSize: 12, color: 'rgba(255,255,255,0.65)', lineHeight: 1.45, marginBottom: 12,
+            opacity: active ? 1 : 0, transition: 'opacity 0.3s 0.15s', minHeight: 36,
+          }}>{blurb}</p>
+        )}
+        <div style={{
+          display: 'inline-flex', alignItems: 'center', gap: 6,
+          padding: '6px 14px', borderRadius: 980,
+          background: isSelected ? tint : 'transparent',
+          color: isSelected ? '#000' : '#fff',
+          border: isSelected ? `1px solid ${tint}` : '1px solid rgba(255,255,255,0.25)',
+          fontSize: 12, fontWeight: 500,
+          opacity: active ? 1 : 0, transition: 'opacity 0.3s 0.2s',
+        }}>
+          {isSelected ? '✓ Added · tap for more' : '+ Add to cart'}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const PortalCatalog = ({ productOptions, selectedLabels = [], onSelect }) => {
+  // Group products into categories
+  const grouped = React.useMemo(() => {
+    const buckets = {};
+    CATEGORY_MAP.forEach(c => { buckets[c.id] = { ...c, items: [] }; });
+    buckets.other = { id: 'other', title: 'Other', tint: '#a1a1aa', items: [] };
+
+    productOptions.forEach(label => {
+      const { categoryId, blurb } = categorize(label);
+      const parsed = parseLabel(label);
+      buckets[categoryId].items.push({ parsed, blurb });
+    });
+    return Object.values(buckets).filter(b => b.items.length > 0);
+  }, [productOptions]);
+
+  return (
+    <div>
+      {grouped.map(cat => (
+        <div key={cat.id} style={{ marginBottom: 44 }}>
+          <div style={{ marginBottom: 20, display: 'flex', alignItems: 'center', gap: 12 }}>
+            <div style={{
+              width: 5, height: 22, borderRadius: 3, background: cat.tint,
+              boxShadow: `0 0 14px ${cat.tint}80`,
+            }} />
+            <h3 style={{ fontSize: 18, fontWeight: 600, color: '#f5f5f7', letterSpacing: '-0.01em' }}>{cat.title}</h3>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)' }}>· {cat.items.length}</span>
+          </div>
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
+            gap: 16,
+          }}>
+            {cat.items.map(({ parsed, blurb }) => (
+              <PortalRevealCard
+                key={parsed.fullLabel}
+                parsed={parsed}
+                blurb={blurb}
+                tint={cat.tint}
+                isSelected={selectedLabels.includes(parsed.fullLabel)}
+                onSelect={onSelect}
+              />
+            ))}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
 // ─── Order Form ───────────────────────────────────────────────────────────────
 const OrderForm = ({ userData, onOrderPlaced }) => {
-  const [product, setProduct] = React.useState('');
-  const [qty, setQty] = React.useState(1);
+  // cart: [{ label, qty }]
+  const [cart, setCart] = React.useState([]);
   const [notes, setNotes] = React.useState('');
   const [success, setSuccess] = React.useState(false);
+  const [submitting, setSubmitting] = React.useState(false);
 
   // Pick the right product list for this client, based on their pricelist
   // setting (set by the coach in the admin profile editor). Falls back to
@@ -482,42 +878,69 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
     return PRODUCTS;
   }, [userData?.profile?.pricelist]);
 
+  const addToCart = (label) => {
+    setCart(prev => {
+      const existing = prev.find(item => item.label === label);
+      if (existing) {
+        return prev.map(item => item.label === label ? { ...item, qty: item.qty + 1 } : item);
+      }
+      return [...prev, { label, qty: 1 }];
+    });
+  };
+
+  const updateQty = (label, qty) => {
+    if (qty < 1) return;
+    setCart(prev => prev.map(item => item.label === label ? { ...item, qty } : item));
+  };
+
+  const removeFromCart = (label) => {
+    setCart(prev => prev.filter(item => item.label !== label));
+  };
+
+  const cartLabels = cart.map(c => c.label);
+
   const submit = async (e) => {
     e.preventDefault();
-    if (!product) return;
+    if (cart.length === 0 || submitting) return;
+    setSubmitting(true);
 
-    let insertedOrder = null;
-    // 1. Insert order row in Supabase
+    const insertedOrders = [];
+    // 1. Insert one order row per cart line in Supabase
     try {
       const { data: { user } } = await sb.auth.getUser();
       if (user) {
-        const { data, error } = await sb.from('orders').insert({
-          client_id: user.id,
-          product,
-          quantity: qty,
-          notes: notes || null,
-          status: 'pending',
-        }).select().single();
-        if (error) throw error;
-        insertedOrder = data;
+        for (const item of cart) {
+          const { data, error } = await sb.from('orders').insert({
+            client_id: user.id,
+            product: item.label,
+            quantity: item.qty,
+            notes: notes || null,
+            status: 'pending',
+          }).select().single();
+          if (error) throw error;
+          insertedOrders.push(data);
+        }
       }
     } catch (err) {
       console.error('Order insert failed:', err);
     }
 
-    // 2. Email/SMS notification via Formspree
+    // 2. Email/SMS notification via Formspree — single message with full cart
     try {
+      const summary = cart.map(it => `• ${it.label} × ${it.qty}`).join('\n');
+      const totalItems = cart.reduce((s, it) => s + it.qty, 0);
       await fetch('https://formspree.io/f/xojyzgbq', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({
-          _subject: `New Order: ${product} × ${qty}`,
+          _subject: `New Order: ${cart.length} item${cart.length > 1 ? 's' : ''} (${totalItems} total)`,
           client_name: userData?.name && userData.name !== userData?.email ? userData.name : '(no name on file)',
           client_email: userData?.email || 'Unknown',
           client_phone: userData?.phone || '(no phone on file)',
           shipping_address: userData?.address || '(no address on file — please contact client)',
-          product,
-          quantity: qty,
+          order_summary: summary,
+          item_count: cart.length,
+          total_items: totalItems,
           notes: notes || '(none)',
           submitted_at: new Date().toLocaleString(),
         }),
@@ -526,63 +949,232 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
       console.error('Notification failed:', err);
     }
 
-    onOrderPlaced({
-      id: insertedOrder?.id,
-      item: product,
-      qty,
-      notes,
+    // Push each cart line into history
+    cart.forEach((item, i) => {
+      onOrderPlaced({
+        id: insertedOrders[i]?.id,
+        item: item.label,
+        qty: item.qty,
+        notes,
+      });
     });
-    setProduct(''); setQty(1); setNotes('');
+    setCart([]); setNotes('');
+    setSubmitting(false);
     setSuccess(true);
-    setTimeout(() => setSuccess(false), 3000);
+    // Keep the success card visible long enough to read the invoice message
+    setTimeout(() => setSuccess(false), 9000);
   };
+
+  // Helpers for cart line display
+  const cartTotal = cart.reduce((sum, item) => {
+    const m = item.label.match(/\$([\d,.]+)/);
+    if (!m) return sum;
+    return sum + parseFloat(m[1].replace(/,/g, '')) * item.qty;
+  }, 0);
+  const hasPrices = cart.length > 0 && cart.every(item => /\$[\d,.]+/.test(item.label));
 
   return (
     <div className="fade-in">
-      <h2 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', marginBottom: 6 }}>Order Form</h2>
-      <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.45)', marginBottom: 28 }}>Request supplements or services.</p>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16, flexWrap: 'wrap', marginBottom: 28 }}>
+        <div>
+          <h2 style={{ fontSize: 26, fontWeight: 600, letterSpacing: '-0.025em', marginBottom: 6 }}>Order Form</h2>
+          <p style={{ fontSize: 15, color: 'rgba(255,255,255,0.45)' }}>Tap any product to add it to your cart.</p>
+        </div>
+        {cart.length > 0 && (
+          <a href="#cart" style={{
+            display: 'inline-flex', alignItems: 'center', gap: 8,
+            padding: '10px 18px', borderRadius: 980,
+            background: 'rgba(41,151,255,0.12)', border: '1px solid rgba(41,151,255,0.45)',
+            color: '#2997ff', fontSize: 14, fontWeight: 500, textDecoration: 'none',
+          }}>
+            <svg width="16" height="16" viewBox="0 0 18 18" fill="none">
+              <path d="M2 3h2l2 9h9l2-7H5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <circle cx="7" cy="15.5" r="1.2" fill="currentColor"/>
+              <circle cx="14" cy="15.5" r="1.2" fill="currentColor"/>
+            </svg>
+            <span>{cart.reduce((s, c) => s + c.qty, 0)} in cart · review</span>
+          </a>
+        )}
+      </div>
 
-      <div className="card" style={{ maxWidth: 560 }}>
-        <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-          <div>
-            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Product / Service</label>
-            <select className="field-input" value={product} onChange={e => setProduct(e.target.value)}>
-              <option value="">Select a product</option>
-              {productOptions.map(p => <option key={p}>{p}</option>)}
-            </select>
-          </div>
-          <div>
-            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Quantity</label>
-            <input className="field-input" type="number" min="1" max="20"
-              value={qty} onChange={e => setQty(parseInt(e.target.value))}
-              style={{ width: 120 }} />
-          </div>
-          <div>
-            <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Special Notes <span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.35)' }}>(optional)</span></label>
-            <textarea className="field-input" rows="3" placeholder="Allergies, preferences, timing requests…"
-              value={notes} onChange={e => setNotes(e.target.value)}
-              style={{ resize: 'vertical', minHeight: 80 }} />
-          </div>
+      {/* Catalog grid */}
+      <PortalCatalog
+        productOptions={productOptions}
+        selectedLabels={cartLabels}
+        onSelect={addToCart}
+      />
 
-          {success && (
-            <div style={{
-              background: 'rgba(52,199,89,0.10)', border: '1px solid rgba(52,199,89,0.25)',
-              borderRadius: 10, padding: '12px 16px',
-              display: 'flex', alignItems: 'center', gap: 10,
-            }}>
-              <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-                <circle cx="9" cy="9" r="8" stroke="#1a8a3c" strokeWidth="1.5"/>
-                <path d="M5.5 9l2.5 2.5 4-4" stroke="#1a8a3c" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
-              </svg>
-              <span style={{ fontSize: 14, color: '#1a8a3c', fontWeight: 500 }}>Order placed successfully.</span>
+      {/* Cart / Checkout panel */}
+      <div id="cart" style={{ scrollMarginTop: 24 }}>
+        {cart.length > 0 && (
+          <div className="card" style={{ maxWidth: 760, marginTop: 40, padding: 28 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 22, gap: 12 }}>
+              <div>
+                <p style={{ fontSize: 11, letterSpacing: 1.5, color: '#2997ff', textTransform: 'uppercase', fontWeight: 600, marginBottom: 4 }}>Your Cart</p>
+                <h3 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.01em' }}>
+                  {cart.length} {cart.length === 1 ? 'item' : 'items'}
+                </h3>
+              </div>
+              <button type="button" onClick={() => setCart([])} style={{
+                background: 'transparent', color: 'rgba(255,255,255,0.5)', border: 'none',
+                fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: 4,
+              }}>Clear cart</button>
             </div>
-          )}
 
-          <button type="submit" className="btn-blue" disabled={!product}
-            style={{ alignSelf: 'flex-start', padding: '12px 28px', opacity: !product ? 0.4 : 1, cursor: !product ? 'not-allowed' : 'pointer' }}>
-            Place Order
-          </button>
-        </form>
+            {/* Cart lines */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 22 }}>
+              {cart.map(item => {
+                const photo = getProductPhoto(item.label);
+                const parsed = parseLabel(item.label);
+                return (
+                  <div key={item.label} style={{
+                    display: 'flex', alignItems: 'center', gap: 14,
+                    padding: 12, background: 'rgba(255,255,255,0.04)',
+                    border: '1px solid rgba(255,255,255,0.06)', borderRadius: 12,
+                  }}>
+                    <div style={{
+                      width: 56, height: 56, borderRadius: 10, flexShrink: 0,
+                      background: '#0a0a0a', overflow: 'hidden',
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      {photo ? (
+                        <img src={photo} alt="" style={{
+                          width: '100%', height: '100%', objectFit: 'cover',
+                          objectPosition: item.label.toLowerCase().includes('plan') || item.label.toLowerCase().includes('workout') ? '14% center' : '32% center',
+                        }} />
+                      ) : (
+                        <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>PFB</div>
+                      )}
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <p style={{ fontSize: 15, fontWeight: 500, color: '#f5f5f7', marginBottom: 2 }}>{parsed.name}</p>
+                      <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.5)' }}>
+                        {parsed.strength}{parsed.price ? ` · ${parsed.price}` : ''}
+                      </p>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <button type="button" onClick={() => updateQty(item.label, item.qty - 1)} style={{
+                        width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)',
+                        background: 'transparent', color: '#f5f5f7', cursor: 'pointer', fontSize: 16, lineHeight: 1,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>−</button>
+                      <input type="number" min="1" max="99" value={item.qty}
+                        onChange={e => updateQty(item.label, parseInt(e.target.value) || 1)}
+                        style={{
+                          width: 44, textAlign: 'center', fontSize: 14, fontWeight: 600,
+                          background: 'transparent', border: 'none', color: '#f5f5f7',
+                          outline: 'none',
+                        }} />
+                      <button type="button" onClick={() => updateQty(item.label, item.qty + 1)} style={{
+                        width: 28, height: 28, borderRadius: 8, border: '1px solid rgba(255,255,255,0.15)',
+                        background: 'transparent', color: '#f5f5f7', cursor: 'pointer', fontSize: 16, lineHeight: 1,
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      }}>+</button>
+                    </div>
+                    <button type="button" onClick={() => removeFromCart(item.label)} title="Remove" style={{
+                      width: 30, height: 30, borderRadius: 8, border: 'none',
+                      background: 'transparent', color: 'rgba(255,255,255,0.4)',
+                      cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <path d="M3 3l8 8M11 3l-8 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round"/>
+                      </svg>
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
+
+            {hasPrices && (
+              <div style={{
+                display: 'flex', justifyContent: 'space-between', alignItems: 'baseline',
+                padding: '14px 16px', background: 'rgba(41,151,255,0.08)',
+                border: '1px solid rgba(41,151,255,0.18)', borderRadius: 10, marginBottom: 18,
+              }}>
+                <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>Estimated subtotal</span>
+                <span style={{ fontSize: 20, fontWeight: 600, color: '#f5f5f7' }}>${cartTotal.toFixed(2)}</span>
+              </div>
+            )}
+
+            <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Special Notes <span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.35)' }}>(optional)</span></label>
+                <textarea className="field-input" rows="3" placeholder="Allergies, preferences, timing requests…"
+                  value={notes} onChange={e => setNotes(e.target.value)}
+                  style={{ resize: 'vertical', minHeight: 80 }} />
+              </div>
+
+              {/* Invoice notice — always visible at checkout */}
+              <div style={{
+                background: 'rgba(41,151,255,0.06)', border: '1px solid rgba(41,151,255,0.22)',
+                borderRadius: 12, padding: '14px 16px',
+                display: 'flex', gap: 12, alignItems: 'flex-start',
+              }}>
+                <div style={{ flexShrink: 0, marginTop: 2 }}>
+                  <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
+                    <circle cx="9" cy="9" r="8" stroke="#2997ff" strokeWidth="1.5"/>
+                    <path d="M9 5v5M9 13v.5" stroke="#2997ff" strokeWidth="1.6" strokeLinecap="round"/>
+                  </svg>
+                </div>
+                <div style={{ fontSize: 13, color: 'rgba(255,255,255,0.78)', lineHeight: 1.55 }}>
+                  <strong style={{ color: '#f5f5f7', fontWeight: 600 }}>How payment works.</strong>{' '}
+                  Once we receive your order, you'll be sent an invoice via <strong style={{ color: '#f5f5f7' }}>email and SMS</strong> with payment options. No payment is collected at this step.
+                </div>
+              </div>
+
+              {success && (
+                <div style={{
+                  background: 'rgba(52,199,89,0.10)', border: '1px solid rgba(52,199,89,0.28)',
+                  borderRadius: 12, padding: '14px 16px',
+                  display: 'flex', gap: 12, alignItems: 'flex-start',
+                }}>
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0, marginTop: 1 }}>
+                    <circle cx="10" cy="10" r="9" stroke="#34c759" strokeWidth="1.5"/>
+                    <path d="M6 10l3 3 5-6" stroke="#34c759" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <div style={{ fontSize: 14, color: '#7be39a', lineHeight: 1.5 }}>
+                    <strong style={{ color: '#a6f2bd', fontWeight: 600, display: 'block', marginBottom: 2 }}>Order received.</strong>
+                    An invoice will be sent to you shortly via email and SMS with payment options.
+                  </div>
+                </div>
+              )}
+
+              <button type="submit" className="btn-blue" disabled={submitting}
+                style={{ alignSelf: 'flex-start', padding: '13px 32px', fontSize: 15, opacity: submitting ? 0.6 : 1 }}>
+                {submitting ? 'Placing order…' : `Place order (${cart.reduce((s, c) => s + c.qty, 0)} ${cart.reduce((s, c) => s + c.qty, 0) === 1 ? 'item' : 'items'})`}
+              </button>
+            </form>
+          </div>
+        )}
+
+        {cart.length === 0 && success && (
+          <div className="card" style={{ maxWidth: 760, marginTop: 40, padding: 28 }}>
+            <div style={{
+              background: 'rgba(52,199,89,0.10)', border: '1px solid rgba(52,199,89,0.28)',
+              borderRadius: 12, padding: '16px 18px',
+              display: 'flex', gap: 12, alignItems: 'flex-start',
+            }}>
+              <svg width="22" height="22" viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0, marginTop: 1 }}>
+                <circle cx="10" cy="10" r="9" stroke="#34c759" strokeWidth="1.5"/>
+                <path d="M6 10l3 3 5-6" stroke="#34c759" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+              <div style={{ fontSize: 14, color: '#a6f2bd', lineHeight: 1.55 }}>
+                <strong style={{ color: '#a6f2bd', fontWeight: 600, display: 'block', marginBottom: 4, fontSize: 15 }}>Order received.</strong>
+                An invoice will be sent to you shortly via email and SMS with payment options.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {cart.length === 0 && !success && (
+          <div style={{
+            maxWidth: 760, marginTop: 40, padding: '24px 28px',
+            background: 'rgba(255,255,255,0.03)', border: '1px dashed rgba(255,255,255,0.08)',
+            borderRadius: 16, color: 'rgba(255,255,255,0.4)', fontSize: 14, textAlign: 'center',
+          }}>
+            Your cart is empty. Tap any product above to add it.
+          </div>
+        )}
       </div>
     </div>
   );

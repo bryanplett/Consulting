@@ -227,6 +227,7 @@
 <body>
 <div id="root"></div>
 
+<script type="text/babel" src="catalog.jsx"></script>
 <script type="text/babel">
 
 
@@ -266,7 +267,7 @@ const Nav = ({ onSchedule }) => {
     return () => window.removeEventListener('scroll', onScroll);
   }, []);
 
-  const links = ['Supplementation', 'Fitness', 'Nutrition', 'About'];
+  const links = ['Supplementation', 'Fitness', 'Nutrition', 'Catalog', 'About'];
 
   return (
     <>
@@ -1217,6 +1218,7 @@ const App = () => {
         <Hero onSchedule={openModal} />
         <ScrollingBanner />
         <PillarTile {...pillars[0]} onSchedule={openModal} />
+        <ProductCatalog onSchedule={openModal} />
         <SectionDivider accent="#2997ff" />
         <PillarTile {...pillars[1]} onSchedule={openModal} />
         <SectionDivider accent="#2997ff" />

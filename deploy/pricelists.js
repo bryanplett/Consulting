@@ -20,6 +20,7 @@ window.PRICELISTS = {
       // Peptides
       { name: 'Selank — 10mg',         price: 150, category: 'Peptides' },
       { name: 'Semax — 10mg',          price: 150, category: 'Peptides' },
+      { name: 'Semax-Selank Blend — 10mg', price: 175, category: 'Peptides' },
       { name: 'KPV — 10mg',            price: 125, category: 'Peptides' },
       { name: 'DSIP — 10mg',           price: 175, category: 'Peptides' },
       { name: 'SS-31 — 10mg',          price: 125, category: 'Peptides' },
@@ -74,6 +75,7 @@ window.PRICELISTS = {
       // Peptides
       { name: 'Selank — 10mg',         price: 110, category: 'Peptides' },
       { name: 'Semax — 10mg',          price: 110, category: 'Peptides' },
+      { name: 'Semax-Selank Blend — 10mg', price: 130, category: 'Peptides' },
       { name: 'KPV — 10mg',            price:  95, category: 'Peptides' },
       { name: 'DSIP — 10mg',           price: 130, category: 'Peptides' },
       { name: 'SS-31 — 10mg',          price:  95, category: 'Peptides' },
