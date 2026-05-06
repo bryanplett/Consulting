@@ -929,7 +929,7 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
     try {
       const summary = cart.map(it => `• ${it.label} × ${it.qty}`).join('\n');
       const totalItems = cart.reduce((s, it) => s + it.qty, 0);
-      await fetch('https://formspree.io/f/xojyzgbq', {
+      await fetch('https://formspree.io/f/mnjwvgan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify({

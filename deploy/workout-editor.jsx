@@ -234,7 +234,7 @@ const WorkoutEditor = ({ sb, client, onBack }) => {
 
         // 2. Email via Formspree
         try {
-          await fetch('https://formspree.io/f/xojyzgbq', {
+          await fetch('https://formspree.io/f/mnjwvgan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
             body: JSON.stringify({

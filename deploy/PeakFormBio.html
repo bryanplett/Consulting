@@ -856,9 +856,39 @@ const ConsultationModal = ({ onClose }) => {
 
   const set = (key, val) => setForm((f) => ({ ...f, [key]: val }));
 
-  const handleSubmit = (e) => {
+  const [submitting, setSubmitting] = React.useState(false);
+  const [submitError, setSubmitError] = React.useState('');
+
+  const handleSubmit = async (e) => {
     e.preventDefault();
-    setSubmitted(true);
+    if (submitting) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      const res = await fetch('https://formspree.io/f/mnjwvgan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify({
+          _subject: `New Consultation Booking — ${form.name} (${form.focus || 'Unspecified'})`,
+          name: form.name,
+          email: form.email,
+          phone: form.phone || '(not provided)',
+          focus_area: form.focus || '(not selected)',
+          primary_goal: form.goal || '(none provided)',
+          preferred_date: form.date,
+          preferred_time: form.time,
+          meeting_option: form.meeting,
+          submitted_at: new Date().toLocaleString(),
+        }),
+      });
+      if (!res.ok) throw new Error('Submission failed');
+      setSubmitted(true);
+    } catch (err) {
+      console.error('Consultation submit failed:', err);
+      setSubmitError('Something went wrong. Please try again, or email us directly.');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const meetingOptions = ['Video', 'Phone', 'In Person'];
@@ -954,6 +984,11 @@ const ConsultationModal = ({ onClose }) => {
                 value={form.email} onChange={(e) => set('email', e.target.value)} />
                   </div>
                   <div>
+                    <label style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f', display: 'block', marginBottom: 8 }}>Phone</label>
+                    <input className="form-input" type="tel" placeholder="(555) 123-4567"
+                value={form.phone} onChange={(e) => set('phone', e.target.value)} />
+                  </div>
+                  <div>
                     <label style={{ fontSize: 13, fontWeight: 600, color: '#1d1d1f', display: 'block', marginBottom: 8 }}>Focus Area</label>
                     <select className="form-select"
                 value={form.focus} onChange={(e) => set('focus', e.target.value)}>
@@ -976,10 +1011,10 @@ const ConsultationModal = ({ onClose }) => {
                 <button
               className="btn-primary"
               onClick={() => setStep(2)}
-              disabled={!form.name || !form.email}
+              disabled={!form.name || !form.email || !form.phone}
               style={{ width: '100%', marginTop: 28, padding: '16px', fontSize: 17,
-                opacity: !form.name || !form.email ? 0.4 : 1,
-                cursor: !form.name || !form.email ? 'not-allowed' : 'pointer'
+                opacity: !form.name || !form.email || !form.phone ? 0.4 : 1,
+                cursor: !form.name || !form.email || !form.phone ? 'not-allowed' : 'pointer'
               }}>
                   Continue
                 </button>
@@ -1076,18 +1111,22 @@ const ConsultationModal = ({ onClose }) => {
                   </div>
                 </div>
 
+                {submitError && (
+                  <p style={{ fontSize: 13, color: '#c0392b', marginTop: 16 }}>{submitError}</p>
+                )}
+
                 <div style={{ display: 'flex', gap: 12, marginTop: 28 }}>
                   <button type="button" className="btn-ghost" onClick={() => setStep(1)}
               style={{ flex: '0 0 auto', padding: '15px 24px' }}>
                     Back
                   </button>
                   <button type="submit" className="btn-primary"
-              disabled={!form.date || !form.time || !form.meeting}
+              disabled={!form.date || !form.time || !form.meeting || submitting}
               style={{ flex: 1, padding: '16px', fontSize: 17,
-                opacity: (!form.date || !form.time || !form.meeting) ? 0.4 : 1,
-                cursor: (!form.date || !form.time || !form.meeting) ? 'not-allowed' : 'pointer'
+                opacity: (!form.date || !form.time || !form.meeting || submitting) ? 0.4 : 1,
+                cursor: (!form.date || !form.time || !form.meeting || submitting) ? 'not-allowed' : 'pointer'
               }}>
-                    Confirm Booking
+                    {submitting ? 'Booking…' : 'Confirm Booking'}
                   </button>
                 </div>
               </form>
