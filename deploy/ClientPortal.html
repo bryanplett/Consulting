@@ -968,8 +968,20 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
   // cart: [{ label, qty }]
   const [cart, setCart] = React.useState([]);
   const [notes, setNotes] = React.useState('');
+  // Shipping fields — required at checkout. Prefill from the user's profile
+  // when we have it, but always let the client confirm/correct.
+  const [shippingAddress, setShippingAddress] = React.useState('');
+  const [phone, setPhone] = React.useState('');
+  const [fieldErrors, setFieldErrors] = React.useState({});
   const [success, setSuccess] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+
+  // Hydrate shipping fields from the saved profile once it arrives.
+  React.useEffect(() => {
+    if (userData?.address && !shippingAddress) setShippingAddress(userData.address);
+    if (userData?.phone && !phone) setPhone(userData.phone);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [userData?.address, userData?.phone]);
 
   // Pick the right product list for this client, based on their pricelist
   // setting (set by the coach in the admin profile editor). Falls back to
@@ -1013,6 +1025,22 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
   const submit = async (e) => {
     e.preventDefault();
     if (cart.length === 0 || submitting) return;
+
+    // Validate required shipping fields. We trim and require both.
+    const trimmedAddress = shippingAddress.trim();
+    const trimmedPhone = phone.trim();
+    const errs = {};
+    if (!trimmedAddress) errs.address = 'Shipping address is required.';
+    else if (trimmedAddress.length < 8) errs.address = 'Please enter a complete shipping address.';
+    // Phone: require exactly 10 digits (US format)
+    const digitCount = (trimmedPhone.match(/\d/g) || []).length;
+    if (!trimmedPhone) errs.phone = 'Phone number is required.';
+    else if (digitCount < 10) errs.phone = 'Please enter a valid 10-digit phone number.';
+    if (Object.keys(errs).length) {
+      setFieldErrors(errs);
+      return;
+    }
+    setFieldErrors({});
     setSubmitting(true);
 
     const insertedOrders = [];
@@ -1047,8 +1075,8 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
           _subject: `New Order: ${cart.length} item${cart.length > 1 ? 's' : ''} (${totalItems} total)`,
           client_name: userData?.name && userData.name !== userData?.email ? userData.name : '(no name on file)',
           client_email: userData?.email || 'Unknown',
-          client_phone: userData?.phone || '(no phone on file)',
-          shipping_address: userData?.address || '(no address on file — please contact client)',
+          client_phone: phone.trim() || userData?.phone || '(no phone on file)',
+          shipping_address: shippingAddress.trim() || userData?.address || '(no address on file — please contact client)',
           order_summary: summary,
           item_count: cart.length,
           total_items: totalItems,
@@ -1208,6 +1236,73 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
             )}
 
             <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+              {/* Shipping section header */}
+              <div style={{
+                fontSize: 11, letterSpacing: 1.5, color: '#2997ff',
+                textTransform: 'uppercase', fontWeight: 600,
+                marginBottom: -6,
+              }}>Shipping Details</div>
+
+              {/* Shipping Address — required */}
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>
+                  Shipping Address <span style={{ color: '#ff6b6b', fontWeight: 600 }}>*</span>
+                </label>
+                <textarea
+                  className="field-input"
+                  rows="2"
+                  placeholder="Street, city, state, ZIP / postal code, country"
+                  value={shippingAddress}
+                  onChange={e => {
+                    setShippingAddress(e.target.value);
+                    if (fieldErrors.address) setFieldErrors(prev => ({ ...prev, address: undefined }));
+                  }}
+                  required
+                  aria-invalid={!!fieldErrors.address}
+                  style={{
+                    resize: 'vertical', minHeight: 64,
+                    borderColor: fieldErrors.address ? 'rgba(255,107,107,0.55)' : undefined,
+                  }}
+                />
+                {fieldErrors.address && (
+                  <p style={{ fontSize: 12, color: '#ff8a8a', marginTop: 6, letterSpacing: '-0.1px' }}>
+                    {fieldErrors.address}
+                  </p>
+                )}
+              </div>
+
+              {/* Phone — required */}
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>
+                  Phone Number <span style={{ color: '#ff6b6b', fontWeight: 600 }}>*</span>
+                </label>
+                <input
+                  className="field-input"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="(555) 123-4567"
+                  value={phone}
+                  onChange={e => {
+                    setPhone(e.target.value);
+                    if (fieldErrors.phone) setFieldErrors(prev => ({ ...prev, phone: undefined }));
+                  }}
+                  required
+                  aria-invalid={!!fieldErrors.phone}
+                  style={{
+                    borderColor: fieldErrors.phone ? 'rgba(255,107,107,0.55)' : undefined,
+                  }}
+                />
+                {fieldErrors.phone && (
+                  <p style={{ fontSize: 12, color: '#ff8a8a', marginTop: 6, letterSpacing: '-0.1px' }}>
+                    {fieldErrors.phone}
+                  </p>
+                )}
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 6, letterSpacing: '-0.1px' }}>
+                  Used to send you the invoice and shipment updates via SMS.
+                </p>
+              </div>
+
               <div>
                 <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>Special Notes <span style={{ fontWeight: 400, color: 'rgba(255,255,255,0.35)' }}>(optional)</span></label>
                 <textarea className="field-input" rows="3" placeholder="Allergies, preferences, timing requests…"
