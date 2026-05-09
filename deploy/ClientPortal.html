@@ -681,7 +681,7 @@ const PortalVial = ({ name, strength, tint, size = 130 }) => (
   </div>
 );
 
-const PortalRevealCard = ({ parsed, blurb, tint, isSelected, onSelect, variants, selectedLabels = [] }) => {
+const PortalRevealCard = ({ parsed, blurb, tint, isSelected, onSelect, onExpand, variants, selectedLabels = [], expanded = false }) => {
   // `variants` (optional): array of { parsed: {...}, blurb } for products that
   // share one card across multiple strengths (Semaglutide / Tirzepatide /
   // Retatrutide). When supplied, the card shows a strength selector and
@@ -696,7 +696,7 @@ const PortalRevealCard = ({ parsed, blurb, tint, isSelected, onSelect, variants,
   const variantSelected = hasVariants && selectedLabels.includes(activeVariant.parsed.fullLabel);
   const anyVariantSelected = hasVariants && variants.some(v => selectedLabels.includes(v.parsed.fullLabel));
   const cardSelected = hasVariants ? anyVariantSelected : isSelected;
-  const active = hover || cardSelected;
+  const active = hover || cardSelected || expanded;
 
   const panelRef = React.useRef(null);
   const [panelHeight, setPanelHeight] = React.useState(0);
@@ -709,9 +709,10 @@ const PortalRevealCard = ({ parsed, blurb, tint, isSelected, onSelect, variants,
   }, [displayBlurb, display.name, display.strength, display.price, hasVariants, variants?.length]);
 
   // Fixed card height keeps proportions identical across all cards.
-  const CARD_HEIGHT = 460;
-  // How much of the panel peeks at rest (header strip with name/strength/price).
-  const PEEK_HEIGHT = 96;
+  const CARD_HEIGHT = expanded ? 600 : 460;
+  // At rest only the product name peeks. On hover/click the rest of the panel
+  // (strength, price, description, add-to-cart) slides up.
+  const PEEK_HEIGHT = 76;
   const slideOffset = Math.max(panelHeight - PEEK_HEIGHT, 0);
 
   const handlePrimaryAction = () => {
@@ -726,7 +727,11 @@ const PortalRevealCard = ({ parsed, blurb, tint, isSelected, onSelect, variants,
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
-      onClick={hasVariants ? undefined : () => onSelect(parsed.fullLabel)}
+      onClick={(e) => {
+        // Click expands the card to a focused, larger view. Adding to cart is
+        // handled by the dedicated button (which calls stopPropagation).
+        if (onExpand) onExpand();
+      }}
       style={{
         position: 'relative',
         width: '100%', height: CARD_HEIGHT,
@@ -734,7 +739,7 @@ const PortalRevealCard = ({ parsed, blurb, tint, isSelected, onSelect, variants,
         background: `linear-gradient(180deg, #1a1a1c 0%, #0f0f10 100%)`,
         border: `1px solid ${cardSelected ? tint : (hover ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)')}`,
         boxShadow: cardSelected ? `0 0 0 1px ${tint}, 0 12px 30px ${tint}33` : 'none',
-        cursor: hasVariants ? 'default' : 'pointer', overflow: 'hidden',
+        cursor: 'pointer', overflow: 'hidden',
         transition: 'border-color 0.3s, box-shadow 0.3s',
       }}>
       {/* Aura */}
@@ -790,6 +795,8 @@ const PortalRevealCard = ({ parsed, blurb, tint, isSelected, onSelect, variants,
         <div style={{
           display: 'flex', alignItems: 'center',
           marginBottom: 14, height: 22, gap: 8,
+          opacity: active ? 1 : 0,
+          transition: 'opacity 0.25s 0.05s',
         }}>
           <span style={{
             display: 'inline-block', padding: '2px 8px', borderRadius: 6,
@@ -872,6 +879,15 @@ const PortalRevealCard = ({ parsed, blurb, tint, isSelected, onSelect, variants,
 };
 
 const PortalCatalog = ({ productOptions, selectedLabels = [], onSelect }) => {
+  const [expandedKey, setExpandedKey] = React.useState(null);
+
+  // Close on Esc.
+  React.useEffect(() => {
+    if (!expandedKey) return;
+    const onKey = (e) => { if (e.key === 'Escape') setExpandedKey(null); };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [expandedKey]);
   // Group products into categories
   const grouped = React.useMemo(() => {
     const buckets = {};
@@ -884,35 +900,37 @@ const PortalCatalog = ({ productOptions, selectedLabels = [], onSelect }) => {
       buckets[categoryId].items.push({ parsed, blurb });
     });
 
-    // Collapse Semaglutide / Tirzepatide / Retatrutide variants into a single
-    // card per compound, with a strength selector. Helper so we don't repeat
-    // ourselves three times.
-    const collapse = (bucket, matchKey) => {
-      if (!bucket) return;
-      const variants = bucket.items.filter(it => it.parsed.fullLabel.toLowerCase().includes(matchKey));
-      if (variants.length <= 1) return;
-      // Sort variants by mg numeric value asc so the picker reads naturally.
-      const mgValue = (it) => {
-        const m = it.parsed.strength && it.parsed.strength.match(/(\d+(?:\.\d+)?)/);
-        return m ? parseFloat(m[1]) : 0;
-      };
-      variants.sort((a, b) => mgValue(a) - mgValue(b));
-      // Remove the individual variants from the bucket.
-      bucket.items = bucket.items.filter(it => !it.parsed.fullLabel.toLowerCase().includes(matchKey));
-      // Push one collapsed item carrying the variants array.
-      const head = variants[0];
-      bucket.items.push({
-        parsed: head.parsed, // used for photo lookup + initial display
-        blurb: head.blurb,
-        variants,
-      });
+    // Auto-collapse: any product with 2+ strengths under the same name becomes
+    // a single card with a strength selector at the bottom. Catches Sema /
+    // Tirz / Reta as well as SS-31, MOTS, HGH, etc.
+    const mgValue = (it) => {
+      const m = it.parsed.strength && it.parsed.strength.match(/(\d+(?:\.\d+)?)/);
+      return m ? parseFloat(m[1]) : 0;
     };
+    Object.values(buckets).forEach(bucket => {
+      const byName = {};
+      bucket.items.forEach(it => {
+        const key = it.parsed.name.toLowerCase().trim();
+        (byName[key] = byName[key] || []).push(it);
+      });
+      const collapsed = [];
+      bucket.items.forEach(it => {
+        const key = it.parsed.name.toLowerCase().trim();
+        const group = byName[key];
+        if (!group) return; // already emitted
+        if (group.length > 1) {
+          group.sort((a, b) => mgValue(a) - mgValue(b));
+          const head = group[0];
+          collapsed.push({ parsed: head.parsed, blurb: head.blurb, variants: group });
+        } else {
+          collapsed.push(group[0]);
+        }
+        delete byName[key];
+      });
+      bucket.items = collapsed;
+    });
 
     if (buckets.metabolic) {
-      collapse(buckets.metabolic, 'semaglutide');
-      collapse(buckets.metabolic, 'tirzepatide');
-      collapse(buckets.metabolic, 'retatrutide');
-
       // Within Metabolic / Weight Management, surface Semaglutide → Tirzepatide
       // → Retatrutide first (in that order), before 5 Amino, Cagrilintide, KLOW.
       const priority = ['semaglutide', 'tirzepatide', 'retatrutide'];
@@ -954,11 +972,56 @@ const PortalCatalog = ({ productOptions, selectedLabels = [], onSelect }) => {
                 selectedLabels={selectedLabels}
                 isSelected={selectedLabels.includes(parsed.fullLabel)}
                 onSelect={onSelect}
+                onExpand={() => setExpandedKey(parsed.fullLabel)}
               />
             ))}
           </div>
         </div>
       ))}
+
+      {expandedKey && (() => {
+        // Find the item across all buckets.
+        let found = null, foundCat = null;
+        for (const cat of grouped) {
+          const it = cat.items.find(i => i.parsed.fullLabel === expandedKey);
+          if (it) { found = it; foundCat = cat; break; }
+        }
+        if (!found) return null;
+        return (
+          <div
+            onClick={() => setExpandedKey(null)}
+            style={{
+              position: 'fixed', inset: 0, zIndex: 200,
+              background: 'rgba(0,0,0,0.72)', backdropFilter: 'blur(8px)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: 24, animation: 'fadeIn 0.18s ease',
+            }}>
+            <div onClick={(e) => e.stopPropagation()} style={{ width: '100%', maxWidth: 440, position: 'relative' }}>
+              <button
+                onClick={() => setExpandedKey(null)}
+                aria-label="Close"
+                style={{
+                  position: 'absolute', top: -44, right: 0,
+                  width: 36, height: 36, borderRadius: '50%',
+                  background: 'rgba(255,255,255,0.10)', border: '1px solid rgba(255,255,255,0.15)',
+                  color: '#fff', cursor: 'pointer', fontSize: 18, lineHeight: 1,
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: 'inherit',
+                }}>✕</button>
+              <PortalRevealCard
+                parsed={found.parsed}
+                blurb={found.blurb}
+                tint={foundCat.tint}
+                variants={found.variants}
+                selectedLabels={selectedLabels}
+                isSelected={selectedLabels.includes(found.parsed.fullLabel)}
+                onSelect={onSelect}
+                expanded={true}
+              />
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };
