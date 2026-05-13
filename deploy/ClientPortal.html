@@ -1107,21 +1107,28 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
     setSubmitting(true);
 
     const insertedOrders = [];
-    // 1. Insert one order row per cart line in Supabase
+    // 1. Insert one order row per cart line in Supabase.
+    //    Real schema is (product, quantity, ordered_at). We try those first and fall
+    //    back to (item, qty) in case the schema ever gets renamed.
     try {
       const { data: { user } } = await sb.auth.getUser();
       if (user) {
         for (const item of cart) {
-          const { data, error } = await sb.from('orders').insert({
-            client_id: user.id,
-            product: item.label,
-            quantity: item.qty,
-            notes: notes || null,
-            status: 'pending',
-          }).select().single();
+          const base = { client_id: user.id, notes: notes || null, status: 'pending' };
+          let { data, error } = await sb.from('orders')
+            .insert({ ...base, product: item.label, quantity: item.qty })
+            .select().single();
+          if (error && /column .* does not exist/i.test(error.message || '')) {
+            const retry = await sb.from('orders')
+              .insert({ ...base, item: item.label, qty: item.qty })
+              .select().single();
+            data = retry.data; error = retry.error;
+          }
           if (error) throw error;
           insertedOrders.push(data);
         }
+      } else {
+        console.warn('Order placed without a signed-in user; skipping DB insert.');
       }
     } catch (err) {
       console.error('Order insert failed:', err);
