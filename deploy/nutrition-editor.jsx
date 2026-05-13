@@ -4,6 +4,27 @@
 
 const NDAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
 const MEAL_SLOTS = ['Breakfast','Lunch','Snack','Dinner'];
+const DEFAULT_SPLITS = [30, 30, 10, 30];  // Breakfast / Lunch / Snack / Dinner
+
+// ─── Per-client meal-recommender settings ────────────────────────────────────
+// Authoritative copy lives in nutrition_plans.meal_settings (Supabase column).
+// localStorage is a legacy fallback for clients whose plan hasn't been re-saved
+// since the migration; we read it on first load and write back to the DB next save.
+const NE_SETTINGS_KEY = (cid) => 'pfb_nutri_settings_' + cid;
+const loadLegacyNeSettings = (cid) => {
+  try { return JSON.parse(localStorage.getItem(NE_SETTINGS_KEY(cid)) || '{}'); }
+  catch { return {}; }
+};
+
+// Map a slot name → recipe meal-type key
+const SLOT_TYPE_MAP = { breakfast:'breakfast', lunch:'lunch', dinner:'dinner', snack:'snack' };
+const mealTypeFor = (slotName) => {
+  const k = (slotName||'').toLowerCase();
+  if (SLOT_TYPE_MAP[k]) return SLOT_TYPE_MAP[k];
+  // Try keyword detection
+  for (const key of Object.keys(SLOT_TYPE_MAP)) if (k.includes(key)) return key;
+  return '';
+};
 
 const emptyItem = () => ({ ingredient:'', qty:'', unit:'g', calories:'', protein:'', carbs:'', fat:'' });
 const emptyMeal = (name) => ({ name, items: [] });
@@ -105,6 +126,135 @@ const macroVarColor = (actual, target) => {
   return '#ff453a';
 };
 
+// ─── Meal Recommender Modal ───────────────────────────────────────────────────
+// mode: 'find'  → filters by slot macro target + tolerance
+// mode: 'swap'  → filters within ±pct of currentMacros
+const MealRecommenderModal = ({
+  open, onClose, mode, slotMacros, currentMacros, currentRecipeId,
+  mealType, client, tolerance: tolProp, onAssign, onAddAlternative, canAddAlt, addingAlt,
+}) => {
+  const [tolerance, setTolerance] = React.useState(tolProp || window.DEFAULT_TOLERANCE);
+  const [includeAll, setIncludeAll] = React.useState(false);
+  const recipes = React.useMemo(() => (open ? (window.loadRecipes ? window.loadRecipes() : []) : []), [open]);
+
+  React.useEffect(() => { if (open) { setTolerance(tolProp || window.DEFAULT_TOLERANCE); setIncludeAll(false); } }, [open]);
+
+  if (!open) return null;
+
+  const matches = mode === 'find'
+    ? (slotMacros && window.recommendForSlot ? window.recommendForSlot({ recipes, slotMacros, mealType, client, tolerance, includeAll }) : [])
+    : (window.recommendSimilar ? window.recommendSimilar({ recipes, currentMacros, mealType, client, pct: 0.15, currentId: currentRecipeId }) : []);
+
+  const target = mode === 'find' ? (slotMacros || { calories:0, protein:0, carbs:0, fat:0 }) : currentMacros;
+  const tolDisplay = mode === 'find' ? `±${tolerance.protein}P · ±${tolerance.carbs}C · ±${tolerance.fat}F` : '±15% of current';
+
+  const macroDelta = (recipe) => {
+    const dp = (recipe.protein||0) - (target.protein||0);
+    const dc = (recipe.carbs||0) - (target.carbs||0);
+    const df = (recipe.fat||0) - (target.fat||0);
+    return { dp, dc, df };
+  };
+  const dStr = (n) => (n>0?'+':'') + Math.round(n);
+  const dColor = (n, tol) => Math.abs(n) <= tol ? '#34c759' : Math.abs(n) <= tol*2 ? '#ff9f0a' : '#ff453a';
+
+  const stop = e => e.stopPropagation();
+  return (
+    <div onClick={onClose} style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.65)', backdropFilter:'blur(4px)', zIndex:220, display:'flex', alignItems:'flex-start', justifyContent:'center', padding:'40px 20px', overflowY:'auto' }}>
+      <div onClick={stop} className="card fade-in" style={{ width:'100%', maxWidth:920, padding:24 }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', marginBottom:16, gap:12, flexWrap:'wrap' }}>
+          <div>
+            <p style={{ fontSize:11, letterSpacing:'0.08em', textTransform:'uppercase', color:'rgba(255,255,255,0.45)', fontWeight:600 }}>
+              {addingAlt ? 'Add alternative' : (mode === 'find' ? 'Find meals' : 'Swap meal')}
+            </p>
+            <h3 style={{ fontSize:20, fontWeight:600, marginTop:4, letterSpacing:'-0.02em' }}>
+              {mode === 'find'
+                ? <>Target: <span style={{ color:'#2997ff' }}>{target.calories} kcal</span> · P{target.protein} · C{target.carbs} · F{target.fat}</>
+                : <>Find a swap for similar macros</>}
+            </h3>
+            <p style={{ fontSize:12, color:'rgba(255,255,255,0.5)', marginTop:4 }}>
+              {mealType ? `${mealType[0].toUpperCase()+mealType.slice(1)} · ` : ''}{tolDisplay}
+              {client?.dietary_pref ? ` · ${client.dietary_pref}` : ''}
+              {client?.allergies ? ` · avoiding: ${client.allergies.slice(0,40)}${client.allergies.length>40?'…':''}` : ''}
+            </p>
+          </div>
+          <button onClick={onClose} style={{ background:'transparent', border:'none', color:'rgba(255,255,255,0.5)', fontSize:24, cursor:'pointer', lineHeight:1 }}>×</button>
+        </div>
+
+        {mode === 'find' && (
+          <div style={{ background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)', borderRadius:10, padding:'10px 14px', marginBottom:14, display:'flex', gap:14, alignItems:'center', flexWrap:'wrap' }}>
+            <span style={{ fontSize:12, fontWeight:600, color:'rgba(255,255,255,0.6)', textTransform:'uppercase', letterSpacing:'0.04em' }}>Tolerance</span>
+            {[['protein','P'],['carbs','C'],['fat','F']].map(([k,lbl])=>(
+              <label key={k} style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:13, color:'rgba(255,255,255,0.75)' }}>
+                <span style={{ fontFamily:'ui-monospace,monospace', width:14 }}>±{lbl}</span>
+                <input type="number" value={tolerance[k]} onChange={e=>setTolerance({...tolerance, [k]: Number(e.target.value)||0})}
+                  style={{ width:54, background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.10)', borderRadius:6, color:'#fff', padding:'4px 6px', fontSize:13, textAlign:'center', fontFamily:'inherit' }} />
+              </label>
+            ))}
+            <label style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:13, color:'rgba(255,255,255,0.7)', marginLeft:'auto', cursor:'pointer' }}>
+              <input type="checkbox" checked={includeAll} onChange={e=>setIncludeAll(e.target.checked)} style={{ accentColor:'#0066cc' }} />
+              Show closest if none within tolerance
+            </label>
+          </div>
+        )}
+
+        {matches.length === 0 ? (
+          <div style={{ padding:'48px 20px', textAlign:'center', color:'rgba(255,255,255,0.5)', border:'1px dashed rgba(255,255,255,0.10)', borderRadius:12 }}>
+            <p style={{ fontSize:15, marginBottom:8 }}>No recipes match.</p>
+            <p style={{ fontSize:13, color:'rgba(255,255,255,0.4)' }}>
+              {mode === 'find'
+                ? 'Try loosening the tolerance, or check "Show closest" above.'
+                : 'No similar recipes for this meal type within ±15%. Try editing macros manually.'}
+            </p>
+          </div>
+        ) : (
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(260px,1fr))', gap:14 }}>
+            {matches.map(r => {
+              const d = macroDelta(r);
+              return (
+                <div key={r.id} style={{ background:'#0e0e10', border:'1px solid rgba(255,255,255,0.08)', borderRadius:12, overflow:'hidden', display:'flex', flexDirection:'column' }}>
+                  <div style={{ aspectRatio:'16/10', background:'#1a1a1c', position:'relative', overflow:'hidden' }}>
+                    {r.photo_url
+                      ? <img src={r.photo_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover', display:'block' }} />
+                      : <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', color:'rgba(255,255,255,0.3)', fontSize:11, fontFamily:'ui-monospace,monospace', background:'repeating-linear-gradient(45deg, rgba(255,255,255,0.03) 0 12px, rgba(255,255,255,0.06) 12px 24px)' }}>recipe photo</div>}
+                    <div style={{ position:'absolute', top:8, right:8, background:'rgba(0,0,0,0.55)', backdropFilter:'blur(6px)', borderRadius:980, padding:'3px 9px', fontSize:11, color:'#fff', fontFamily:'ui-monospace,monospace' }}>⏱ {r.prep_minutes||'—'}m</div>
+                  </div>
+                  <div style={{ padding:'12px 14px 14px', display:'flex', flexDirection:'column', gap:8, flex:1 }}>
+                    <h4 style={{ fontSize:15, fontWeight:600, letterSpacing:'-0.01em', lineHeight:1.3 }}>{r.name}</h4>
+                    <div style={{ display:'flex', gap:6, flexWrap:'wrap', fontSize:11 }}>
+                      <span style={{ background:'rgba(255,255,255,0.06)', padding:'3px 8px', borderRadius:980, fontFamily:'ui-monospace,monospace' }}>{r.calories} kcal</span>
+                      <span style={{ background:'rgba(255,255,255,0.06)', padding:'3px 8px', borderRadius:980, fontFamily:'ui-monospace,monospace' }}>
+                        P{r.protein} <span style={{ color: dColor(d.dp, tolerance.protein||10) }}>({dStr(d.dp)})</span>
+                      </span>
+                      <span style={{ background:'rgba(255,255,255,0.06)', padding:'3px 8px', borderRadius:980, fontFamily:'ui-monospace,monospace' }}>
+                        C{r.carbs} <span style={{ color: dColor(d.dc, tolerance.carbs||15) }}>({dStr(d.dc)})</span>
+                      </span>
+                      <span style={{ background:'rgba(255,255,255,0.06)', padding:'3px 8px', borderRadius:980, fontFamily:'ui-monospace,monospace' }}>
+                        F{r.fat} <span style={{ color: dColor(d.df, tolerance.fat||5) }}>({dStr(d.df)})</span>
+                      </span>
+                    </div>
+                    <div style={{ display:'flex', flexWrap:'wrap', gap:4 }}>
+                      {(r.dietary_tags||[]).slice(0,4).map(t => <span key={t} style={{ fontSize:10, padding:'2px 7px', borderRadius:980, background:'rgba(41,151,255,0.14)', color:'#2997ff', fontWeight:600 }}>{t}</span>)}
+                    </div>
+                    <div style={{ marginTop:'auto', display:'flex', gap:6, paddingTop:6 }}>
+                      <button onClick={()=>onAssign(r)} className="btn-blue" style={{ flex:1, padding:'8px 12px', fontSize:13 }}>
+                        {addingAlt ? '+ Add as alternative' : (mode === 'swap' ? 'Swap to this' : 'Use this meal')}
+                      </button>
+                      {canAddAlt && mode === 'find' && !addingAlt && (
+                        <button onClick={()=>onAddAlternative(r)} title="Add as client-pickable alternative"
+                          style={{ background:'transparent', border:'1px solid rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.7)', borderRadius:980, padding:'8px 12px', fontSize:13, cursor:'pointer', fontFamily:'inherit' }}>+ Alt</button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const NutritionEditor = ({ sb, client, onBack }) => {
   const [planId, setPlanId] = React.useState(null);
   const [title, setTitle] = React.useState('');
@@ -124,10 +274,23 @@ const NutritionEditor = ({ sb, client, onBack }) => {
   const [tmplSaveOpen, setTmplSaveOpen] = React.useState(false);
   const [tmplName, setTmplName] = React.useState('');
 
+  // Meal recommender state. Authoritative copy is nutrition_plans.meal_settings;
+  // loaded above in the main fetch effect, persisted on Save.
+  const [splits, setSplits] = React.useState(DEFAULT_SPLITS);
+  const [tolerance, setTolerance] = React.useState(window.DEFAULT_TOLERANCE || { protein:10, carbs:15, fat:5 });
+  const [clientCanChoose, setClientCanChoose] = React.useState(false);
+  const [showSplits, setShowSplits] = React.useState(false);
+  const [recOpen, setRecOpen] = React.useState(null); // { mode, mi, currentMacros, currentRecipeId }
+  const updateSplits = (next) => setSplits(next);
+  const updateTolerance = (next) => setTolerance(next);
+  const updateClientCanChoose = (next) => setClientCanChoose(next);
+
   React.useEffect(() => {
     let cancelled = false;
     (async () => {
       setLoading(true);
+      // Kick off recipe refresh in parallel (cached for the recommender modal)
+      if (window.refreshRecipes) { window.refreshRecipes(sb).catch(()=>{}); }
       try {
         const [planRes, ingRes, tmplRes] = await Promise.all([
           sb.from('nutrition_plans').select('*').eq('client_id', client.id).eq('active', true).order('created_at',{ascending:false}).limit(1),
@@ -146,6 +309,20 @@ const NutritionEditor = ({ sb, client, onBack }) => {
           });
           setWeek(normalizeNWeek(p.plan_data));
           setUpdatedAt(p.updated_at || p.created_at);
+          // Meal-recommender settings: prefer DB column; fall back to legacy localStorage
+          const ms = (p.meal_settings && typeof p.meal_settings === 'object') ? p.meal_settings : {};
+          const legacy = loadLegacyNeSettings(client.id);
+          const splits = Array.isArray(ms.splits) ? ms.splits
+            : Array.isArray(legacy.splits) ? legacy.splits : DEFAULT_SPLITS;
+          const tol = ms.tolerance || legacy.tolerance || (window.DEFAULT_TOLERANCE || { protein:10, carbs:15, fat:5 });
+          const canChoose = typeof ms.clientCanChoose === 'boolean' ? ms.clientCanChoose
+            : typeof legacy.clientCanChoose === 'boolean' ? legacy.clientCanChoose : false;
+          setSplits(splits); setTolerance(tol); setClientCanChoose(canChoose);
+        } else {
+          const legacy = loadLegacyNeSettings(client.id);
+          if (Array.isArray(legacy.splits) && legacy.splits.length) setSplits(legacy.splits);
+          if (legacy.tolerance) setTolerance(legacy.tolerance);
+          if (typeof legacy.clientCanChoose === 'boolean') setClientCanChoose(legacy.clientCanChoose);
         }
         setIngredients(ingRes.data || []);
         setTemplates(tmplRes.data || []);
@@ -176,6 +353,55 @@ const NutritionEditor = ({ sb, client, onBack }) => {
     }
     updateItem(di, mi, ii, patch);
   };
+
+  // ── Meal-recommender helpers ───────────────────────────────────────────────
+  // Convert a recipe into a single line-item that fills the meal's macros.
+  const recipeToItems = (recipe) => ([{
+    ingredient: recipe.name + ' (1 serving)',
+    qty: '1', unit: 'serving',
+    calories: recipe.calories || 0, protein: recipe.protein || 0,
+    carbs: recipe.carbs || 0, fat: recipe.fat || 0,
+  }]);
+  const assignRecipe = (di, mi, recipe) => {
+    updateMeal(di, mi, {
+      recipe_id: recipe.id, recipe_name: recipe.name,
+      recipe_photo: recipe.photo_url || '', recipe_prep: recipe.prep_minutes || 0,
+      recipe_tags: recipe.dietary_tags || [],
+      items: recipeToItems(recipe),
+      alternatives: week[di].meals[mi].alternatives || [],
+    });
+    setRecOpen(null);
+  };
+  const addAlternative = (di, mi, recipe) => {
+    const cur = week[di].meals[mi].alternatives || [];
+    if (cur.some(a => a.recipe_id === recipe.id)) return;
+    updateMeal(di, mi, { alternatives: [...cur, {
+      recipe_id: recipe.id, recipe_name: recipe.name, recipe_photo: recipe.photo_url || '',
+      recipe_prep: recipe.prep_minutes || 0,
+      calories: recipe.calories || 0, protein: recipe.protein || 0,
+      carbs: recipe.carbs || 0, fat: recipe.fat || 0,
+    }] });
+  };
+  const removeAlternative = (di, mi, recipe_id) => {
+    const cur = week[di].meals[mi].alternatives || [];
+    updateMeal(di, mi, { alternatives: cur.filter(a => a.recipe_id !== recipe_id) });
+  };
+  const clearRecipe = (di, mi) => {
+    updateMeal(di, mi, { recipe_id: null, recipe_name: null, recipe_photo: null, recipe_prep: null, recipe_tags: null, items: [] });
+  };
+
+  // Slot target macros from daily target + split percentages
+  const slotTarget = (mi) => {
+    const pct = splits[mi];
+    if (pct == null || !tt.calories) return null;
+    return {
+      calories: Math.round((tt.calories * pct) / 100),
+      protein: Math.round((tt.protein * pct) / 100),
+      carbs: Math.round((tt.carbs * pct) / 100),
+      fat: Math.round((tt.fat * pct) / 100),
+    };
+  };
+  const splitsSum = splits.reduce((a,b)=>a+(Number(b)||0),0);
 
   // Daily totals
   const dayTotals = (d) => d.meals.reduce((acc, m) => {
@@ -210,6 +436,7 @@ const NutritionEditor = ({ sb, client, onBack }) => {
         daily_calories: num(target.calories) || null, protein_g: num(target.protein) || null,
         carbs_g: num(target.carbs) || null, fats_g: num(target.fat) || null,
         plan_data: week, active: true, updated_at: new Date().toISOString(),
+        meal_settings: { splits, tolerance, clientCanChoose },
       };
       const res = planId
         ? await sb.from('nutrition_plans').update(payload).eq('id', planId).select().single()
@@ -297,6 +524,74 @@ const NutritionEditor = ({ sb, client, onBack }) => {
         </div>
       </div>
 
+      {/* Macro split + recommender settings */}
+      <div className="card" style={{ marginBottom: 18, padding: showSplits ? 28 : '18px 28px' }}>
+        <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', cursor:'pointer', flexWrap:'wrap', gap:10 }}
+          onClick={()=>setShowSplits(s=>!s)}>
+          <div>
+            <h3 style={{ fontSize:15, fontWeight:600, letterSpacing:'-0.01em' }}>Macro split &amp; recommender</h3>
+            <p style={{ fontSize:12, color:'rgba(255,255,255,0.5)', marginTop:2 }}>
+              {MEAL_SLOTS.map((s,i)=>`${s.slice(0,3)} ${splits[i]||0}%`).join(' · ')}
+              {splitsSum !== 100 && <span style={{ color:'#ff9f0a', marginLeft:8 }}>· sums to {splitsSum}%</span>}
+              {clientCanChoose && <span style={{ color:'#34c759', marginLeft:8 }}>· client can choose alternatives</span>}
+            </p>
+          </div>
+          <span style={{ fontSize:12, color:'#2997ff' }}>{showSplits ? 'Hide' : 'Edit'}</span>
+        </div>
+
+        {showSplits && (
+          <div style={{ marginTop:18 }}>
+            <p style={{ fontSize:12, color:'rgba(255,255,255,0.55)', marginBottom:10 }}>
+              How daily targets divide across meal slots. Used to compute the per-slot target shown on each meal below.
+            </p>
+            <div style={{ display:'grid', gridTemplateColumns:`repeat(${MEAL_SLOTS.length},1fr) auto`, gap:10, alignItems:'flex-end' }}>
+              {MEAL_SLOTS.map((slot, i) => {
+                const t = tt.calories ? Math.round((tt.calories * (splits[i]||0)) / 100) : 0;
+                return (
+                  <div key={slot}>
+                    <label style={{ fontSize:11, fontWeight:600, color:'rgba(255,255,255,0.55)', textTransform:'uppercase', letterSpacing:'0.04em' }}>{slot}</label>
+                    <div style={{ display:'flex', alignItems:'center', gap:4, marginTop:6 }}>
+                      <input className="field-input" type="number" min="0" max="100" value={splits[i] ?? 0}
+                        onChange={e=>{ const next = splits.slice(); next[i] = Number(e.target.value)||0; updateSplits(next); }}
+                        style={{ padding:'8px 10px', fontSize:14 }} />
+                      <span style={{ color:'rgba(255,255,255,0.4)', fontSize:13 }}>%</span>
+                    </div>
+                    <div style={{ fontSize:11, color:'rgba(255,255,255,0.45)', marginTop:4, fontFamily:'ui-monospace,monospace' }}>≈ {t} kcal</div>
+                  </div>
+                );
+              })}
+              <button className="btn-ghost" style={{ padding:'8px 14px', fontSize:12 }}
+                onClick={()=>updateSplits([30,30,10,30])} title="Reset to default 30/30/10/30">Reset</button>
+            </div>
+
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4, 1fr)', gap:10, marginTop:18, alignItems:'flex-end' }}>
+              <div style={{ gridColumn:'span 4' }}>
+                <p style={{ fontSize:12, fontWeight:600, color:'rgba(255,255,255,0.6)', textTransform:'uppercase', letterSpacing:'0.04em' }}>Default fit tolerance</p>
+                <p style={{ fontSize:11, color:'rgba(255,255,255,0.45)', marginTop:2 }}>How close a recipe's macros must be to count as a match.</p>
+              </div>
+              {[['protein','± Protein (g)'],['carbs','± Carbs (g)'],['fat','± Fat (g)']].map(([k,lbl])=>(
+                <div key={k}>
+                  <label style={{ fontSize:11, fontWeight:600, color:'rgba(255,255,255,0.55)', textTransform:'uppercase', letterSpacing:'0.04em' }}>{lbl}</label>
+                  <input className="field-input" type="number" value={tolerance[k]}
+                    onChange={e=>updateTolerance({...tolerance, [k]: Number(e.target.value)||0})}
+                    style={{ padding:'8px 10px', fontSize:14, marginTop:6 }} />
+                </div>
+              ))}
+            </div>
+
+            <label style={{ display:'flex', alignItems:'center', gap:10, marginTop:18, padding:'10px 14px', borderRadius:10, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(255,255,255,0.07)', cursor:'pointer' }}>
+              <input type="checkbox" checked={clientCanChoose} onChange={e=>updateClientCanChoose(e.target.checked)} style={{ accentColor:'#0066cc', width:16, height:16 }} />
+              <div>
+                <div style={{ fontSize:13, fontWeight:600 }}>Let this client choose alternatives</div>
+                <div style={{ fontSize:11, color:'rgba(255,255,255,0.5)', marginTop:2 }}>
+                  When on, you can attach 2–3 alternatives per meal. The client sees them in their portal and picks which one they'll eat that day.
+                </div>
+              </div>
+            </label>
+          </div>
+        )}
+      </div>
+
       {/* Day tabs */}
       <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom: 18 }}>
         {week.map((d, i) => (
@@ -332,15 +627,89 @@ const NutritionEditor = ({ sb, client, onBack }) => {
         {/* Meals */}
         {day.meals.map((meal, mi) => {
           const mTotals = meal.items.reduce((a,it)=>({calories:a.calories+num(it.calories),protein:a.protein+num(it.protein),carbs:a.carbs+num(it.carbs),fat:a.fat+num(it.fat)}),{calories:0,protein:0,carbs:0,fat:0});
+          const target = slotTarget(mi);
+          const hasRecipe = !!meal.recipe_id;
+          const mealType = mealTypeFor(meal.name);
           return (
             <div key={mi} style={{ marginBottom:14, paddingBottom:14, borderBottom:'1px solid rgba(255,255,255,0.06)' }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:8, gap:10, flexWrap:'wrap' }}>
-                <input className="field-input" value={meal.name} onChange={e=>updateMeal(activeDay, mi, {name:e.target.value})}
-                  style={{ maxWidth:200, padding:'7px 10px', fontSize:14, fontWeight:600 }} />
-                <div style={{ fontSize:12, color:'rgba(255,255,255,0.5)' }}>
-                  {Math.round(mTotals.calories)} kcal · P{Math.round(mTotals.protein)} C{Math.round(mTotals.carbs)} F{Math.round(mTotals.fat)}
+                <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                  <input className="field-input" value={meal.name} onChange={e=>updateMeal(activeDay, mi, {name:e.target.value})}
+                    style={{ maxWidth:200, padding:'7px 10px', fontSize:14, fontWeight:600 }} />
+                  {target && (
+                    <span title="Per-slot target from your macro split"
+                      style={{ fontSize:11, fontFamily:'ui-monospace,monospace', color:'rgba(255,255,255,0.55)', background:'rgba(41,151,255,0.10)', border:'1px solid rgba(41,151,255,0.25)', padding:'4px 8px', borderRadius:980 }}>
+                      target {target.calories}kcal · P{target.protein} C{target.carbs} F{target.fat}
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize:12, color:'rgba(255,255,255,0.5)', fontFamily:'ui-monospace,monospace' }}>
+                  <span style={{ color: target ? macroVarColor(mTotals.calories, target.calories) : 'rgba(255,255,255,0.5)' }}>{Math.round(mTotals.calories)} kcal</span>
+                  {' · '}<span style={{ color: target ? macroVarColor(mTotals.protein, target.protein) : 'rgba(255,255,255,0.5)' }}>P{Math.round(mTotals.protein)}</span>
+                  {' '}<span style={{ color: target ? macroVarColor(mTotals.carbs, target.carbs) : 'rgba(255,255,255,0.5)' }}>C{Math.round(mTotals.carbs)}</span>
+                  {' '}<span style={{ color: target ? macroVarColor(mTotals.fat, target.fat) : 'rgba(255,255,255,0.5)' }}>F{Math.round(mTotals.fat)}</span>
                 </div>
               </div>
+
+              {/* Assigned recipe card */}
+              {hasRecipe && (
+                <div style={{ display:'flex', gap:12, background:'rgba(191,90,242,0.06)', border:'1px solid rgba(191,90,242,0.25)', borderRadius:12, padding:10, marginBottom:10 }}>
+                  <div style={{ width:64, height:64, borderRadius:10, overflow:'hidden', flexShrink:0, background:'#0e0e10', position:'relative' }}>
+                    {meal.recipe_photo
+                      ? <img src={meal.recipe_photo} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} />
+                      : <div style={{ position:'absolute', inset:0, display:'flex', alignItems:'center', justifyContent:'center', color:'rgba(255,255,255,0.3)', fontSize:9, fontFamily:'ui-monospace,monospace' }}>photo</div>}
+                  </div>
+                  <div style={{ flex:1, minWidth:0 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:8, flexWrap:'wrap' }}>
+                      <div>
+                        <div style={{ fontSize:14, fontWeight:600, letterSpacing:'-0.01em' }}>{meal.recipe_name}</div>
+                        <div style={{ fontSize:11, color:'rgba(255,255,255,0.5)', marginTop:2 }}>
+                          From recipe library · ⏱ {meal.recipe_prep||'—'} min
+                        </div>
+                      </div>
+                      <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                        <button onClick={()=>setRecOpen({ mode:'swap', mi, currentMacros: mTotals, currentRecipeId: meal.recipe_id })}
+                          style={{ background:'transparent', border:'1px solid rgba(255,255,255,0.15)', color:'rgba(255,255,255,0.85)', borderRadius:980, padding:'5px 12px', fontSize:12, cursor:'pointer', fontFamily:'inherit' }}
+                          title="Swap for a similar meal">⇄ Swap</button>
+                        <button onClick={()=>clearRecipe(activeDay, mi)}
+                          style={{ background:'transparent', border:'1px solid rgba(255,69,58,0.3)', color:'#ff453a', borderRadius:980, padding:'5px 12px', fontSize:12, cursor:'pointer', fontFamily:'inherit' }}
+                          title="Remove this recipe from the slot">Clear</button>
+                      </div>
+                    </div>
+                    {/* Alternatives row */}
+                    {(meal.alternatives||[]).length > 0 && (
+                      <div style={{ display:'flex', flexWrap:'wrap', gap:6, marginTop:8 }}>
+                        <span style={{ fontSize:10, color:'rgba(255,255,255,0.45)', textTransform:'uppercase', letterSpacing:'0.05em', fontWeight:600, alignSelf:'center' }}>Client alts:</span>
+                        {meal.alternatives.map(alt => (
+                          <span key={alt.recipe_id} style={{ display:'inline-flex', alignItems:'center', gap:6, fontSize:11, background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.08)', padding:'3px 4px 3px 10px', borderRadius:980 }}>
+                            {alt.recipe_name}
+                            <span style={{ color:'rgba(255,255,255,0.4)', fontFamily:'ui-monospace,monospace' }}>{alt.calories}kcal</span>
+                            <button onClick={()=>removeAlternative(activeDay, mi, alt.recipe_id)} style={{ background:'rgba(255,59,48,0.15)', color:'#ff453a', border:'none', width:18, height:18, borderRadius:'50%', cursor:'pointer', fontSize:11, lineHeight:1 }}>×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Find-meals empty state for unassigned slots */}
+              {!hasRecipe && meal.items.length === 0 && (
+                <div style={{ border:'1px dashed rgba(41,151,255,0.3)', borderRadius:12, padding:'14px 16px', marginBottom:10, display:'flex', justifyContent:'space-between', alignItems:'center', gap:12, flexWrap:'wrap', background:'rgba(41,151,255,0.04)' }}>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:600 }}>Empty slot</div>
+                    <div style={{ fontSize:11, color:'rgba(255,255,255,0.5)', marginTop:2 }}>
+                      {target ? <>We'll find recipes near <b>{target.calories}kcal · P{target.protein} C{target.carbs} F{target.fat}</b></> : 'Set daily targets above to enable recommendations'}
+                    </div>
+                  </div>
+                  <button className="btn-blue" style={{ padding:'8px 16px', fontSize:13 }}
+                    onClick={()=>setRecOpen({ mode:'find', mi, currentMacros: mTotals })}
+                    disabled={!target}>
+                    ⌕ Find meals
+                  </button>
+                </div>
+              )}
+
               <div style={{ overflowX:'auto' }}>
                 <table style={{ width:'100%', borderCollapse:'collapse', minWidth:680 }}>
                   <thead>
@@ -349,8 +718,8 @@ const NutritionEditor = ({ sb, client, onBack }) => {
                     ))}</tr>
                   </thead>
                   <tbody>
-                    {meal.items.length === 0 && (
-                      <tr><td colSpan={9} style={{ padding:14, textAlign:'center', color:'rgba(255,255,255,0.4)', fontSize:13 }}>No items.</td></tr>
+                    {meal.items.length === 0 && !hasRecipe && (
+                      <tr><td colSpan={9} style={{ padding:14, textAlign:'center', color:'rgba(255,255,255,0.4)', fontSize:13 }}>No items. Use "Find meals" above, or add ingredients manually below.</td></tr>
                     )}
                     {meal.items.map((it, ii) => (
                       <tr key={ii} style={{ borderBottom:'1px solid rgba(255,255,255,0.04)' }}>
@@ -373,7 +742,15 @@ const NutritionEditor = ({ sb, client, onBack }) => {
                   </tbody>
                 </table>
               </div>
-              <button className="btn-ghost" onClick={()=>addItem(activeDay, mi)} style={{ marginTop:10, padding:'7px 14px', fontSize:13 }}>+ Add ingredient</button>
+              <div style={{ display:'flex', gap:8, marginTop:10, flexWrap:'wrap' }}>
+                <button className="btn-ghost" onClick={()=>addItem(activeDay, mi)} style={{ padding:'7px 14px', fontSize:13 }}>+ Add ingredient</button>
+                {!hasRecipe && meal.items.length > 0 && target && (
+                  <button className="btn-ghost" onClick={()=>setRecOpen({ mode:'find', mi, currentMacros: mTotals })} style={{ padding:'7px 14px', fontSize:13 }}>⌕ Find meals</button>
+                )}
+                {hasRecipe && clientCanChoose && (
+                  <button className="btn-ghost" onClick={()=>setRecOpen({ mode:'find', mi, currentMacros: mTotals, addingAlt: true })} style={{ padding:'7px 14px', fontSize:13 }}>+ Add alternative</button>
+                )}
+              </div>
             </div>
           );
         })}
@@ -405,6 +782,25 @@ const NutritionEditor = ({ sb, client, onBack }) => {
         </label>
         {saveMsg && <span style={{ fontSize:13, color: saveMsg.startsWith('Error')?'#ff453a':'#34c759' }}>{saveMsg}</span>}
       </div>
+
+      <MealRecommenderModal
+        open={!!recOpen}
+        mode={recOpen?.mode}
+        addingAlt={!!recOpen?.addingAlt}
+        slotMacros={recOpen ? slotTarget(recOpen.mi) : null}
+        currentMacros={recOpen?.currentMacros}
+        currentRecipeId={recOpen?.currentRecipeId}
+        mealType={recOpen ? mealTypeFor(day.meals[recOpen.mi]?.name) : ''}
+        client={client}
+        tolerance={tolerance}
+        canAddAlt={clientCanChoose}
+        onClose={()=>setRecOpen(null)}
+        onAssign={(r)=>{
+          if (recOpen?.addingAlt) { addAlternative(activeDay, recOpen.mi, r); setRecOpen(null); }
+          else assignRecipe(activeDay, recOpen.mi, r);
+        }}
+        onAddAlternative={(r)=>{ addAlternative(activeDay, recOpen.mi, r); }}
+      />
 
       <NModal open={copyOpen} onClose={()=>setCopyOpen(false)} title={`Copy ${day.day} to…`} width={380}>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:8 }}>

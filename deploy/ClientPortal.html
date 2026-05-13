@@ -1492,8 +1492,23 @@ const PurchaseHistory = ({ orders }) => (
 );
 
 // ─── Nutrition Plan ───────────────────────────────────────────────────────────
-const NutritionPlan = ({ plan }) => {
+const NutritionPlan = ({ plan, userId }) => {
   const [activeDay, setActiveDay] = React.useState(0);
+  const picksKey = `pfb_meal_picks_${userId || 'anon'}_${plan?.id || 'noplan'}`;
+  const [picks, setPicks] = React.useState(() => {
+    try { return JSON.parse(localStorage.getItem(picksKey) || '{}'); } catch { return {}; }
+  });
+  const setPick = (dayIdx, mealIdx, value) => {
+    setPicks(p => {
+      const k = `${dayIdx}_${mealIdx}`;
+      const next = { ...p };
+      if (value == null) delete next[k]; else next[k] = value;
+      try { localStorage.setItem(picksKey, JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  const canChoose = !!plan?.settings?.clientCanChoose;
   const macros = [
     { label: 'Calories', value: plan.macros.calories, unit: 'kcal', color: '#0066cc' },
     { label: 'Protein', value: plan.macros.protein, unit: 'g', color: '#34c759' },
@@ -1543,7 +1558,7 @@ const NutritionPlan = ({ plan }) => {
               </h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {(plan.days[activeDay].meals || []).map((meal, i) => {
-                  // meal may be a string (legacy) OR a structured object { name, items: [...] }
+                  // Legacy string meal
                   if (typeof meal === 'string') {
                     return (
                       <div key={i} style={{
@@ -1565,22 +1580,126 @@ const NutritionPlan = ({ plan }) => {
                     .filter(it => it && (it.ingredient || it.qty))
                     .map(it => `${it.qty || ''}${it.unit || ''} ${it.ingredient || ''}`.trim())
                     .join(', ');
+
+                  // Default (coach-assigned) view of this meal
+                  const defaultView = {
+                    recipe_id: meal.recipe_id || null,
+                    name: (meal.recipe_name) || (meal.name) || `Meal ${i+1}`,
+                    photo: meal.recipe_photo || '',
+                    prep: meal.recipe_prep || 0,
+                    calories: items.reduce((s,it)=>s+(parseFloat(it.calories)||0),0),
+                    protein:  items.reduce((s,it)=>s+(parseFloat(it.protein)||0),0),
+                    carbs:    items.reduce((s,it)=>s+(parseFloat(it.carbs)||0),0),
+                    fat:      items.reduce((s,it)=>s+(parseFloat(it.fat)||0),0),
+                    isDefault: true,
+                    summary,
+                    items,
+                  };
+
+                  const alts = (meal.alternatives || []);
+                  const hasAlts = canChoose && alts.length > 0;
+                  const pickKey = `${activeDay}_${i}`;
+                  const pickedId = picks[pickKey] || null;
+                  const pickedAlt = pickedId ? alts.find(a => a.recipe_id === pickedId) : null;
+                  const view = pickedAlt ? {
+                    recipe_id: pickedAlt.recipe_id, name: pickedAlt.recipe_name,
+                    photo: pickedAlt.recipe_photo, prep: pickedAlt.recipe_prep,
+                    calories: pickedAlt.calories, protein: pickedAlt.protein,
+                    carbs: pickedAlt.carbs, fat: pickedAlt.fat,
+                    isDefault: false, summary: '', items: [],
+                  } : defaultView;
+
                   return (
-                    <div key={i} style={{
-                      padding: '12px 16px', background: 'rgba(255,255,255,0.05)', borderRadius: 10,
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: items.length ? 6 : 0 }}>
+                    <div key={i} style={{ padding: '14px 16px', background: 'rgba(255,255,255,0.05)', borderRadius: 12 }}>
+                      <div style={{ display:'flex', gap:12, alignItems:'flex-start' }}>
                         <div style={{
                           width: 24, height: 24, borderRadius: '50%', background: '#0066cc',
                           color: '#fff', fontSize: 11, fontWeight: 700,
                           display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          flexShrink: 0,
+                          flexShrink: 0, marginTop: 4,
                         }}>{i + 1}</div>
-                        <span style={{ fontSize: 15, fontWeight: 600, color: '#f5f5f7' }}>{(meal && meal.name) || `Meal ${i+1}`}</span>
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'flex-start', gap:10, flexWrap:'wrap' }}>
+                            <div>
+                              <div style={{ fontSize: 11, color:'rgba(255,255,255,0.45)', textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:600 }}>
+                                {meal.name || `Meal ${i+1}`}
+                              </div>
+                              <div style={{ fontSize: 17, fontWeight: 600, color: '#f5f5f7', marginTop: 2, letterSpacing:'-0.01em' }}>{view.name}</div>
+                            </div>
+                            {(view.calories > 0 || view.protein > 0) && (
+                              <div style={{ fontSize:12, color:'rgba(255,255,255,0.5)', fontFamily:'ui-monospace,monospace', textAlign:'right' }}>
+                                <div>{Math.round(view.calories)} kcal</div>
+                                <div>P{Math.round(view.protein)} · C{Math.round(view.carbs)} · F{Math.round(view.fat)}</div>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Photo strip when a recipe (or alt) is the source */}
+                          {view.photo && (
+                            <div style={{ marginTop:10, borderRadius:10, overflow:'hidden', maxHeight:160, background:'#1a1a1c' }}>
+                              <img src={view.photo} alt="" style={{ width:'100%', height:'100%', maxHeight:160, objectFit:'cover', display:'block' }} />
+                            </div>
+                          )}
+
+                          {view.summary && (
+                            <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5, marginTop: 10 }}>{view.summary}</p>
+                          )}
+                          {view.prep ? (
+                            <div style={{ fontSize:11, color:'rgba(255,255,255,0.4)', marginTop:8, fontFamily:'ui-monospace,monospace' }}>⏱ {view.prep} min</div>
+                          ) : null}
+
+                          {/* Alternatives picker */}
+                          {hasAlts && (
+                            <div style={{ marginTop:14, paddingTop:12, borderTop:'1px solid rgba(255,255,255,0.08)' }}>
+                              <div style={{ fontSize:11, color:'rgba(255,255,255,0.5)', textTransform:'uppercase', letterSpacing:'0.06em', fontWeight:600, marginBottom:8 }}>
+                                Choose what you'll eat
+                              </div>
+                              <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+                                {/* Default chip */}
+                                <button
+                                  onClick={()=>setPick(activeDay, i, null)}
+                                  style={{
+                                    display:'inline-flex', flexDirection:'column', alignItems:'flex-start', gap:2,
+                                    padding:'8px 12px', borderRadius:10, cursor:'pointer', fontFamily:'inherit',
+                                    border: !pickedAlt ? '1.5px solid #0066cc' : '1px solid rgba(255,255,255,0.10)',
+                                    background: !pickedAlt ? 'rgba(0,102,204,0.12)' : 'rgba(255,255,255,0.03)',
+                                    color:'#f5f5f7', textAlign:'left',
+                                  }}>
+                                  <span style={{ fontSize:12, fontWeight:600 }}>
+                                    {!pickedAlt && '✓ '}{defaultView.name}
+                                  </span>
+                                  <span style={{ fontSize:10, color:'rgba(255,255,255,0.5)', fontFamily:'ui-monospace,monospace' }}>
+                                    {Math.round(defaultView.calories)}kcal · P{Math.round(defaultView.protein)}
+                                  </span>
+                                </button>
+                                {alts.map(alt => {
+                                  const sel = pickedId === alt.recipe_id;
+                                  return (
+                                    <button key={alt.recipe_id} onClick={()=>setPick(activeDay, i, alt.recipe_id)}
+                                      style={{
+                                        display:'inline-flex', flexDirection:'column', alignItems:'flex-start', gap:2,
+                                        padding:'8px 12px', borderRadius:10, cursor:'pointer', fontFamily:'inherit',
+                                        border: sel ? '1.5px solid #0066cc' : '1px solid rgba(255,255,255,0.10)',
+                                        background: sel ? 'rgba(0,102,204,0.12)' : 'rgba(255,255,255,0.03)',
+                                        color:'#f5f5f7', textAlign:'left',
+                                      }}>
+                                      <span style={{ fontSize:12, fontWeight:600 }}>
+                                        {sel && '✓ '}{alt.recipe_name}
+                                      </span>
+                                      <span style={{ fontSize:10, color:'rgba(255,255,255,0.5)', fontFamily:'ui-monospace,monospace' }}>
+                                        {Math.round(alt.calories||0)}kcal · P{Math.round(alt.protein||0)}
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                              <p style={{ fontSize:11, color:'rgba(255,255,255,0.4)', marginTop:8 }}>
+                                Your pick is saved on this device.
+                              </p>
+                            </div>
+                          )}
+                        </div>
                       </div>
-                      {summary && (
-                        <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.7)', lineHeight: 1.5, marginLeft: 36 }}>{summary}</p>
-                      )}
                     </div>
                   );
                 })}
@@ -1922,6 +2041,7 @@ const Portal = ({ userId, onLogout }) => {
 
         const np = (nutritionRes.data || [])[0];
         const nutrition = np ? {
+          id: np.id,
           goal: np.title || 'Current Plan',
           macros: {
             calories: np.daily_calories || 0,
@@ -1930,6 +2050,7 @@ const Portal = ({ userId, onLogout }) => {
             fat: np.fats_g || 0,
           },
           days: Array.isArray(np.plan_data) ? np.plan_data : [],
+          settings: (np.meal_settings && typeof np.meal_settings === 'object') ? np.meal_settings : {},
         } : null;
 
         const wp = (workoutRes.data || [])[0];
@@ -2157,7 +2278,7 @@ const Portal = ({ userId, onLogout }) => {
         {activeTab === 'order'     && <OrderForm userData={userData} onOrderPlaced={addOrder} />}
         {activeTab === 'history'   && <PurchaseHistory orders={userData.orders} />}
         {activeTab === 'nutrition' && (userData.nutrition
-          ? <NutritionPlan plan={userData.nutrition} />
+          ? <NutritionPlan plan={userData.nutrition} userId={userId} />
           : <EmptyState title="Nutrition Plan" message="Your nutrition plan will appear here once your specialist sets it up." />)}
         {activeTab === 'workout'   && (userData.workout
           ? <WorkoutPlan plan={userData.workout} />

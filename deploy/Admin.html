@@ -14,6 +14,7 @@
 <script src="pricelists.js"></script>
 <script type="text/babel" src="weighin.jsx"></script>
 <script type="text/babel" src="workout-editor.jsx"></script>
+<script type="text/babel" src="recipes-db.jsx"></script>
 <script type="text/babel" src="nutrition-editor.jsx"></script>
 <script type="text/babel" src="macros-calculator.jsx"></script>
 <script type="text/babel" src="workout-builder.jsx"></script>
@@ -393,6 +394,7 @@ const App = () => {
   const [editor, setEditor] = React.useState(null); // { client, kind: 'workout'|'nutrition' }
   const [showCalculator, setShowCalculator] = React.useState(false);
   const [showBuilder, setShowBuilder] = React.useState(false);
+  const [showRecipes, setShowRecipes] = React.useState(false);
 
   const loadClients = async () => {
     const { data } = await sb.from('clients').select('*').order('created_at', { ascending: false });
@@ -432,8 +434,9 @@ const App = () => {
           <span style={{ fontSize: 12, letterSpacing: 2, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Admin</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
-          <button className="btn-ghost" onClick={() => { setShowBuilder(true); setShowCalculator(false); setSelected(null); setEditor(null); }}>Workout Builder</button>
-          <button className="btn-ghost" onClick={() => { setShowCalculator(true); setShowBuilder(false); setSelected(null); setEditor(null); }}>Macros Calculator</button>
+          <button className="btn-ghost" onClick={() => { setShowBuilder(true); setShowCalculator(false); setShowRecipes(false); setSelected(null); setEditor(null); }}>Workout Builder</button>
+          <button className="btn-ghost" onClick={() => { setShowCalculator(true); setShowBuilder(false); setShowRecipes(false); setSelected(null); setEditor(null); }}>Macros Calculator</button>
+          <button className="btn-ghost" onClick={() => { setShowRecipes(true); setShowCalculator(false); setShowBuilder(false); setSelected(null); setEditor(null); }}>Recipe DB</button>
           <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{user.email}</span>
           <button className="btn-ghost" onClick={signOut}>Sign Out</button>
         </div>
@@ -444,6 +447,8 @@ const App = () => {
           ? <WorkoutBuilder sb={sb} clients={clients} onBack={() => setShowBuilder(false)} />
           : showCalculator
           ? <MacrosCalculator sb={sb} clients={clients} onBack={() => setShowCalculator(false)} />
+          : showRecipes
+          ? <window.RecipesDB sb={sb} onBack={() => setShowRecipes(false)} />
           : editor
           ? (editor.kind === 'workout'
               ? <WorkoutEditor sb={sb} client={editor.client} onBack={() => setEditor(null)} />
