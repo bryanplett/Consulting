@@ -548,6 +548,16 @@ const CATEGORY_MAP = [
       bloodwork: 'Comprehensive hormonal & bloodwork analysis.',
     },
   },
+  {
+    id: 'accessories', title: 'Accessories', tint: '#8e8e93',
+    matches: ['accessory pack'],
+    blurbs: {
+      'accessory pack': 'Add the supplies you need to your order. Each pack price is listed below.',
+      'pack \u2014 01':    'Syringes and alcohol wipes.',
+      'pack \u2014 02':    'BAC water.',
+      'pack \u2014 03':    'Syringes, alcohol wipes, and BAC water.',
+    },
+  },
 ];
 
 const categorize = (label) => {
@@ -1035,6 +1045,8 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
   // when we have it, but always let the client confirm/correct.
   const [shippingAddress, setShippingAddress] = React.useState('');
   const [phone, setPhone] = React.useState('');
+  // Payment method — required at checkout. Empty string = not yet chosen.
+  const [paymentMethod, setPaymentMethod] = React.useState('');
   const [fieldErrors, setFieldErrors] = React.useState({});
   const [success, setSuccess] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
@@ -1060,7 +1072,9 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
     // Only show products that have a matching card on the public catalog
     // (i.e. ones with a photo). Semaglutide / Tirzepatide / Retatrutide are
     // portal-only — no photos, but explicitly allowed through.
-    const portalOnlyAllow = /\b(semaglutide|tirzepatide|retatrutide)\b/i;
+    // Accessory packs are also portal-only — they share a single card with
+    // a variant selector and don't need an individual photo.
+    const portalOnlyAllow = /\b(semaglutide|tirzepatide|retatrutide|accessory pack)\b/i;
     return list.filter(label => getProductPhoto(label) || portalOnlyAllow.test(label));
   }, [userData?.profile?.pricelist]);
 
@@ -1099,6 +1113,7 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
     const digitCount = (trimmedPhone.match(/\d/g) || []).length;
     if (!trimmedPhone) errs.phone = 'Phone number is required.';
     else if (digitCount < 10) errs.phone = 'Please enter a valid 10-digit phone number.';
+    if (!paymentMethod) errs.payment = 'Please choose a payment method.';
     if (Object.keys(errs).length) {
       setFieldErrors(errs);
       return;
@@ -1151,6 +1166,7 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
           item_count: cart.length,
           total_items: totalItems,
           notes: notes || '(none)',
+          payment_method: paymentMethod,
           submitted_at: new Date().toLocaleString(),
         }),
       });
@@ -1167,7 +1183,7 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
         notes,
       });
     });
-    setCart([]); setNotes('');
+    setCart([]); setNotes(''); setPaymentMethod('');
     setSubmitting(false);
     setSuccess(true);
     // Keep the success card visible long enough to read the invoice message
@@ -1228,6 +1244,18 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
                 background: 'transparent', color: 'rgba(255,255,255,0.5)', border: 'none',
                 fontSize: 13, cursor: 'pointer', fontFamily: 'inherit', padding: 4,
               }}>Clear cart</button>
+            </div>
+
+            {/* Accessory pack helper note — always visible to help clients pick the right one */}
+            <div style={{
+              marginBottom: 18, padding: '12px 14px',
+              background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 10, fontSize: 12.5, color: 'rgba(255,255,255,0.7)', lineHeight: 1.55,
+            }}>
+              <span style={{ fontWeight: 600, color: '#f5f5f7' }}>Need supplies?</span>{' '}
+              If you need <strong style={{ color: '#f5f5f7' }}>Syringes and Wipes</strong>, choose <strong style={{ color: '#f5f5f7' }}>Accessory Pack 01</strong>.{' '}
+              If you need <strong style={{ color: '#f5f5f7' }}>BAC Water</strong>, choose <strong style={{ color: '#f5f5f7' }}>Accessory Pack 02</strong>.{' '}
+              If you need <strong style={{ color: '#f5f5f7' }}>Syringes, Wipes, and BAC Water</strong>, choose <strong style={{ color: '#f5f5f7' }}>Accessory Pack 03</strong>.
             </div>
 
             {/* Cart lines */}
@@ -1378,6 +1406,38 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
                 <textarea className="field-input" rows="3" placeholder="Allergies, preferences, timing requests…"
                   value={notes} onChange={e => setNotes(e.target.value)}
                   style={{ resize: 'vertical', minHeight: 80 }} />
+              </div>
+
+              {/* Payment method — required */}
+              <div>
+                <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 8 }}>
+                  Payment Method <span style={{ color: '#ff6b6b', fontWeight: 600 }}>*</span>
+                </label>
+                <select
+                  className="field-input"
+                  value={paymentMethod}
+                  onChange={e => {
+                    setPaymentMethod(e.target.value);
+                    if (fieldErrors.payment) setFieldErrors(prev => ({ ...prev, payment: undefined }));
+                  }}
+                  required
+                  aria-invalid={!!fieldErrors.payment}
+                  style={{
+                    borderColor: fieldErrors.payment ? 'rgba(255,107,107,0.55)' : undefined,
+                  }}>
+                  <option value="" disabled>Choose how you'd like to pay…</option>
+                  <option value="Debit/Credit Card (Invoiced)">Debit/Credit Card (Invoiced)</option>
+                  <option value="PayPal">PayPal</option>
+                  <option value="Venmo">Venmo</option>
+                </select>
+                {fieldErrors.payment && (
+                  <p style={{ fontSize: 12, color: '#ff8a8a', marginTop: 6, letterSpacing: '-0.1px' }}>
+                    {fieldErrors.payment}
+                  </p>
+                )}
+                <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 6, letterSpacing: '-0.1px' }}>
+                  We'll send invoice + payment instructions for your selected method.
+                </p>
               </div>
 
               {/* Invoice notice — always visible at checkout */}
