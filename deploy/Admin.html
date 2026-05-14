@@ -411,7 +411,7 @@ const ClientDetail = ({ client, onBack, onEdit }) => {
             <div className="table-wrap">
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr style={{ background: 'rgba(255,255,255,0.03)' }}>
-                {['Date','Item','Qty','Status','Notes',''].map(h => (
+                {['Date','Item','Qty','Payment','Shipping','Status','Notes',''].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
                 ))}
               </tr></thead>
@@ -423,6 +423,33 @@ const ClientDetail = ({ client, onBack, onEdit }) => {
                       <td style={{ padding: '14px 18px', color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>{new Date(o.created_at || o.ordered_at).toLocaleDateString()}</td>
                       <td style={{ padding: '14px 18px', fontSize: 14 }}>{o.item || o.product}</td>
                       <td style={{ padding: '14px 18px' }}>{o.qty || o.quantity}</td>
+                      <td style={{ padding: '14px 18px', fontSize: 13 }}>
+                        {o.payment_method
+                          ? <span className="tag" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.85)' }}>{o.payment_method}</span>
+                          : <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>}
+                        {o.coupon_code && (
+                          <div style={{ fontSize: 11, color: '#7be39a', marginTop: 4 }}>coupon: {o.coupon_code}</div>
+                        )}
+                      </td>
+                      <td style={{ padding: '14px 18px', fontSize: 13, color: 'rgba(255,255,255,0.7)', maxWidth: 240 }}>
+                        {o.shipping_method && (
+                          <div style={{ fontWeight: 500, color: 'rgba(255,255,255,0.85)' }}>
+                            {o.shipping_method}
+                            {o.shipping_cost != null && Number(o.shipping_cost) > 0 && (
+                              <span style={{ color: 'rgba(255,255,255,0.5)', marginLeft: 6 }}>+${Number(o.shipping_cost).toFixed(2)}</span>
+                            )}
+                          </div>
+                        )}
+                        {o.shipping_address && (
+                          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 4, whiteSpace: 'pre-wrap' }}>{o.shipping_address}</div>
+                        )}
+                        {(o.phone_at_order && o.phone_at_order !== client.phone) && (
+                          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>☎ {o.phone_at_order}</div>
+                        )}
+                        {!o.shipping_method && !o.shipping_address && !o.phone_at_order && (
+                          <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>
+                        )}
+                      </td>
                       <td style={{ padding: '14px 18px' }}>
                         <span className="tag" style={{ background: sc.bg, color: sc.fg }}>{o.status || 'pending'}</span>
                       </td>
@@ -607,7 +634,7 @@ const AllOrders = ({ clients, onOpenClient, onBack }) => {
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
-                {['Date', 'Client', 'Item', 'Qty', 'Status', 'Notes', ''].map(h => (
+                {['Date', 'Client', 'Item', 'Qty', 'Payment', 'Shipping', 'Status', 'Notes', ''].map(h => (
                   <th key={h} style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
                 ))}
               </tr>
@@ -633,9 +660,36 @@ const AllOrders = ({ clients, onOpenClient, onBack }) => {
                       {c?.email && (
                         <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{c.email}</div>
                       )}
+                      {(o.phone_at_order || c?.phone) && (
+                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{o.phone_at_order || c.phone}</div>
+                      )}
                     </td>
                     <td style={{ padding: '14px 18px', fontSize: 14 }}>{o.item || o.product || '—'}</td>
                     <td style={{ padding: '14px 18px' }}>{o.qty || o.quantity || 1}</td>
+                    <td style={{ padding: '14px 18px', fontSize: 13 }}>
+                      {o.payment_method
+                        ? <span className="tag" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.85)' }}>{o.payment_method}</span>
+                        : <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>}
+                      {o.coupon_code && (
+                        <div style={{ fontSize: 11, color: '#7be39a', marginTop: 4 }}>coupon: {o.coupon_code}</div>
+                      )}
+                    </td>
+                    <td style={{ padding: '14px 18px', fontSize: 13, color: 'rgba(255,255,255,0.7)', maxWidth: 260 }}>
+                      {o.shipping_method && (
+                        <div style={{ fontWeight: 500, color: 'rgba(255,255,255,0.85)' }}>
+                          {o.shipping_method}
+                          {o.shipping_cost != null && Number(o.shipping_cost) > 0 && (
+                            <span style={{ color: 'rgba(255,255,255,0.5)', marginLeft: 6 }}>+${Number(o.shipping_cost).toFixed(2)}</span>
+                          )}
+                        </div>
+                      )}
+                      {o.shipping_address && (
+                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 4, whiteSpace: 'pre-wrap' }}>{o.shipping_address}</div>
+                      )}
+                      {!o.shipping_method && !o.shipping_address && (
+                        <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>
+                      )}
+                    </td>
                     <td style={{ padding: '14px 18px' }}>
                       <span className="tag" style={{ background: sc.bg, color: sc.fg }}>{o.status || 'pending'}</span>
                     </td>
