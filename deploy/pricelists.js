@@ -60,6 +60,10 @@ window.PRICELISTS = {
       { name: 'Retatrutide — 20mg',    price: 200, category: 'GLP-1' },
       { name: 'Retatrutide — 30mg',    price: 225, category: 'GLP-1' },
       { name: 'Retatrutide — 60mg',    price: 275, category: 'GLP-1' },
+      // Accessories
+      { name: 'Accessory Pack — 01',     price:   5, category: 'Accessories' },
+      { name: 'Accessory Pack — 02',     price:  10, category: 'Accessories' },
+      { name: 'Accessory Pack — 03',     price:  15, category: 'Accessories' },
     ],
   },
 
@@ -115,6 +119,10 @@ window.PRICELISTS = {
       { name: 'Retatrutide — 20mg',    price: 150, category: 'GLP-1' },
       { name: 'Retatrutide — 30mg',    price: 170, category: 'GLP-1' },
       { name: 'Retatrutide — 60mg',    price: 210, category: 'GLP-1' },
+      // Accessories — same price across pricelists
+      { name: 'Accessory Pack — 01',     price:   5, category: 'Accessories' },
+      { name: 'Accessory Pack — 02',     price:  10, category: 'Accessories' },
+      { name: 'Accessory Pack — 03',     price:  15, category: 'Accessories' },
     ],
   },
 };
