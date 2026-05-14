@@ -20,6 +20,8 @@
 <script type="text/babel" src="workout-builder.jsx"></script>
 <script type="text/babel" src="profile-editor.jsx"></script>
 <script type="text/babel" src="client-invite.jsx"></script>
+<script type="text/babel" src="coupons-manager.jsx"></script>
+<script type="text/babel" src="inventory-manager.jsx"></script>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   body {
@@ -67,6 +69,32 @@
   }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
   .fade-in { animation: fadeIn 0.2s ease; }
+
+  /* ---- Mobile responsive ---- */
+  .admin-header { padding: 20px 32px; }
+  .admin-header-actions { gap: 16px; }
+  .admin-main { max-width: 1100px; margin: 0 auto; padding: 40px 32px; }
+  .admin-email { display: inline; }
+  .table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .table-wrap table { min-width: 640px; }
+  .filter-chips { gap: 6px; }
+
+  @media (max-width: 720px) {
+    .admin-header { padding: 14px 16px; flex-wrap: wrap; row-gap: 10px; }
+    .admin-header-actions { gap: 8px; flex-wrap: wrap; justify-content: flex-end; flex: 1; }
+    .admin-email { display: none; }
+    .admin-main { padding: 20px 14px; }
+    .card { padding: 18px; border-radius: 14px; }
+    .btn-ghost { padding: 7px 12px; font-size: 13px; }
+    .btn-blue { padding: 10px 18px; font-size: 14px; }
+    .field-input { font-size: 16px; padding: 11px 12px; } /* 16px avoids iOS zoom on focus */
+    h2 { font-size: 22px !important; }
+    h3 { font-size: 17px !important; }
+    .table-wrap table { min-width: 560px; }
+  }
+  @media (max-width: 480px) {
+    .admin-header-actions .label-long { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -87,9 +115,60 @@ const STATUS_COLORS = {
   shipped: { bg: 'rgba(191,90,242,0.14)', fg: '#bf5af2' },
   delivered: { bg: 'rgba(255,255,255,0.10)', fg: 'rgba(255,255,255,0.7)' },
   completed: { bg: 'rgba(52,199,89,0.14)', fg: '#34c759' },
+  cancelled: { bg: 'rgba(255,69,58,0.14)', fg: '#ff453a' },
 };
 
-const STATUS_OPTIONS = ['pending', 'invoiced', 'paid', 'shipped', 'delivered', 'completed'];
+const STATUS_OPTIONS = ['pending', 'invoiced', 'paid', 'shipped', 'delivered', 'completed', 'cancelled'];
+
+// ─── Inventory helper ────────────────────────────────────────────────────────────────
+// Cart labels look like "Retatrutide — 10mg — $160". The inventory table is
+// keyed by the canonical product name without the trailing " — $price" suffix.
+function canonicalProductName(label) {
+  if (!label) return '';
+  return String(label).replace(/\s+—\s+\$[\d,.]+\s*$/, '').trim();
+}
+
+// Decrement stock for an order that just moved to "completed". Guarded by
+// `orders.inventory_applied` so flipping status back and forth doesn't
+// double-count. Returns { ok, error } so callers can surface failures.
+async function decrementInventoryForOrder(order) {
+  try {
+    // Re-fetch to read the current `inventory_applied` flag and avoid races.
+    const { data: fresh, error: fetchErr } = await sb.from('orders')
+      .select('id, product, item, quantity, qty, inventory_applied')
+      .eq('id', order.id).single();
+    if (fetchErr) return { ok: false, error: fetchErr.message };
+    if (fresh.inventory_applied) return { ok: true, alreadyApplied: true };
+
+    const productLabel = fresh.product || fresh.item || order.product || order.item || '';
+    const qty = parseInt(fresh.quantity ?? fresh.qty ?? order.quantity ?? order.qty ?? 1, 10) || 1;
+    const name = canonicalProductName(productLabel);
+    if (!name) return { ok: false, error: 'No product name on order.' };
+
+    // Read current stock (may not exist yet)
+    const { data: inv } = await sb.from('inventory').select('stock').eq('product_name', name).maybeSingle();
+    const current = inv?.stock ?? 0;
+    const next = current - qty;
+
+    const { error: upErr } = await sb.from('inventory').upsert(
+      { product_name: name, stock: next, updated_at: new Date().toISOString() },
+      { onConflict: 'product_name' }
+    );
+    if (upErr) return { ok: false, error: upErr.message };
+
+    // Mark applied. If the column doesn't exist yet (migration not run),
+    // swallow that specific error so the UI still works — admin will run the
+    // migration and idempotency will start working then.
+    const { error: flagErr } = await sb.from('orders')
+      .update({ inventory_applied: true }).eq('id', order.id);
+    if (flagErr && !/column .* does not exist/i.test(flagErr.message)) {
+      return { ok: false, error: flagErr.message };
+    }
+    return { ok: true, name, qty, newStock: next };
+  } catch (err) {
+    return { ok: false, error: err.message || String(err) };
+  }
+}
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 const Login = ({ onSignedIn }) => {
@@ -188,6 +267,7 @@ const ClientsList = ({ clients, onSelect, onEdit, onRefresh }) => {
       )}
 
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="table-wrap">
         <table style={{ width: '100%', borderCollapse: 'collapse' }}>
           <thead>
             <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
@@ -223,6 +303,7 @@ const ClientsList = ({ clients, onSelect, onEdit, onRefresh }) => {
             ))}
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   );
@@ -261,6 +342,13 @@ const ClientDetail = ({ client, onBack, onEdit }) => {
   const setOrderStatus = async (id, status) => {
     await sb.from('orders').update({ status }).eq('id', id);
     setOrders(o => o.map(x => x.id === id ? {...x, status} : x));
+    if (status === 'completed') {
+      const target = orders.find(x => x.id === id);
+      if (target) {
+        const res = await decrementInventoryForOrder(target);
+        if (!res.ok) console.warn('Inventory decrement failed:', res.error);
+      }
+    }
   };
 
   const savePlan = async (kind) => {
@@ -320,6 +408,7 @@ const ClientDetail = ({ client, onBack, onEdit }) => {
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           {orders.length === 0 && <div style={{ padding: 24, color: 'rgba(255,255,255,0.4)' }}>No orders.</div>}
           {orders.length > 0 && (
+            <div className="table-wrap">
             <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead><tr style={{ background: 'rgba(255,255,255,0.03)' }}>
                 {['Date','Item','Qty','Status','Notes',''].map(h => (
@@ -349,6 +438,7 @@ const ClientDetail = ({ client, onBack, onEdit }) => {
                 })}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}
@@ -425,6 +515,13 @@ const AllOrders = ({ clients, onOpenClient, onBack }) => {
   const setOrderStatus = async (id, status) => {
     await sb.from('orders').update({ status }).eq('id', id);
     setOrders(o => (o || []).map(x => x.id === id ? { ...x, status } : x));
+    if (status === 'completed') {
+      const target = (orders || []).find(x => x.id === id);
+      if (target) {
+        const res = await decrementInventoryForOrder(target);
+        if (!res.ok) console.warn('Inventory decrement failed:', res.error);
+      }
+    }
   };
 
   const filtered = React.useMemo(() => {
@@ -506,6 +603,7 @@ const AllOrders = ({ clients, onOpenClient, onBack }) => {
           </div>
         )}
         {filtered.length > 0 && (
+          <div className="table-wrap">
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
@@ -553,6 +651,7 @@ const AllOrders = ({ clients, onOpenClient, onBack }) => {
               })}
             </tbody>
           </table>
+          </div>
         )}
       </div>
     </div>
@@ -570,12 +669,16 @@ const App = () => {
   const [showBuilder, setShowBuilder] = React.useState(false);
   const [showRecipes, setShowRecipes] = React.useState(false);
   const [showOrders, setShowOrders] = React.useState(false);
+  const [showCoupons, setShowCoupons] = React.useState(false);
+  const [showInventory, setShowInventory] = React.useState(false);
 
   const clearViews = () => {
     setShowBuilder(false);
     setShowCalculator(false);
     setShowRecipes(false);
     setShowOrders(false);
+    setShowCoupons(false);
+    setShowInventory(false);
     setSelected(null);
     setEditor(null);
   };
@@ -612,22 +715,24 @@ const App = () => {
 
   return (
     <div style={{ minHeight: '100vh' }}>
-      <header style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 32px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+      <header className="admin-header" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
           <img src="1_5058098532557259934/PNG/VV/Asset 1@4x.png" alt="" style={{ height: 36, width: 'auto' }} />
           <span style={{ fontSize: 12, letterSpacing: 2, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase' }}>Admin</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
+        <div className="admin-header-actions" style={{ display: 'flex', alignItems: 'center' }}>
           <button className="btn-ghost" onClick={() => { clearViews(); setShowOrders(true); }}>Orders</button>
-          <button className="btn-ghost" onClick={() => { clearViews(); setShowBuilder(true); }}>Workout Builder</button>
-          <button className="btn-ghost" onClick={() => { clearViews(); setShowCalculator(true); }}>Macros Calculator</button>
-          <button className="btn-ghost" onClick={() => { clearViews(); setShowRecipes(true); }}>Recipe DB</button>
-          <span style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{user.email}</span>
+          <button className="btn-ghost" onClick={() => { clearViews(); setShowInventory(true); }}>Inventory</button>
+          <button className="btn-ghost" onClick={() => { clearViews(); setShowCoupons(true); }}>Coupons</button>
+          <button className="btn-ghost" onClick={() => { clearViews(); setShowBuilder(true); }}><span className="label-long">Workout </span>Builder</button>
+          <button className="btn-ghost" onClick={() => { clearViews(); setShowCalculator(true); }}><span className="label-long">Macros </span>Calculator</button>
+          <button className="btn-ghost" onClick={() => { clearViews(); setShowRecipes(true); }}>Recipes</button>
+          <span className="admin-email" style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)' }}>{user.email}</span>
           <button className="btn-ghost" onClick={signOut}>Sign Out</button>
         </div>
       </header>
 
-      <main style={{ maxWidth: 1100, margin: '0 auto', padding: '40px 32px' }}>
+      <main className="admin-main">
         {showBuilder
           ? <WorkoutBuilder sb={sb} clients={clients} onBack={() => setShowBuilder(false)} />
           : showCalculator
@@ -639,6 +744,10 @@ const App = () => {
               clients={clients}
               onBack={() => setShowOrders(false)}
               onOpenClient={(c) => { setShowOrders(false); setSelected(c); }} />
+          : showCoupons && window.CouponsManager
+          ? <window.CouponsManager sb={sb} onBack={() => setShowCoupons(false)} />
+          : showInventory && window.InventoryManager
+          ? <window.InventoryManager sb={sb} onBack={() => setShowInventory(false)} />
           : editor
           ? (editor.kind === 'workout'
               ? <WorkoutEditor sb={sb} client={editor.client} onBack={() => setEditor(null)} />

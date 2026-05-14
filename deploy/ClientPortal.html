@@ -1049,9 +1049,10 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
   const [paymentMethod, setPaymentMethod] = React.useState('');
   // Shipping method — required. Empty string = not yet chosen.
   const [shippingMethod, setShippingMethod] = React.useState('');
-  // Coupon code — optional. Case-insensitive; "christi" unlocks reduced
-  // Retatrutide pricing (10mg → $90, 20mg → $110, 30mg → $120).
+  // Coupon code — optional. Validated against the `coupons` Supabase table
+  // (loaded once on mount; admin manages them in Admin → Coupons).
   const [couponCode, setCouponCode] = React.useState('');
+  const [activeCoupons, setActiveCoupons] = React.useState([]);
   const [fieldErrors, setFieldErrors] = React.useState({});
   const [success, setSuccess] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
@@ -1180,7 +1181,7 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
           payment_method: paymentMethod,
           shipping_method: shippingMethod,
           shipping_cost: `$${shippingCost.toFixed(2)}`,
-          coupon_code: couponActive ? `${couponCode.trim()} (applied — saved $${couponSavings.toFixed(2)})` : (couponCode.trim() || '(none)'),
+          coupon_code: couponActive ? `${matchedCoupon.code} (${couponLabel}; saved $${couponSavings.toFixed(2)})` : (couponCode.trim() || '(none)'),
           subtotal: `$${subtotalEffective.toFixed(2)}`,
           order_total: `$${cartTotal.toFixed(2)}`,
           submitted_at: new Date().toLocaleString(),
@@ -1207,30 +1208,47 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
   };
 
   // ─── Coupon + shipping pricing ───────────────────────────────────────
-  // Coupon "christi" (case-insensitive) drops specific Retatrutide strengths.
-  const couponActive = couponCode.trim().toLowerCase() === 'christi';
-  const COUPON_PRICES = {
-    'retatrutide — 10mg': 90,
-    'retatrutide — 20mg': 110,
-    'retatrutide — 30mg': 120,
+  // Coupons come from Supabase (`coupons` table). Each has:
+  //   kind:  'percent' | 'fixed'    → amount is % off (0–100) or $ off
+  //   scope: 'all' | 'retatrutide'  → entire cart, or Retatrutide line items
+  // Codes are case-insensitive and stored lowercased server-side.
+  React.useEffect(() => {
+    (async () => {
+      const { data, error } = await sb.from('coupons').select('*').eq('active', true);
+      if (error) {
+        console.warn('Could not load coupons:', error.message);
+        return;
+      }
+      setActiveCoupons(data || []);
+    })();
+  }, []);
+
+  const matchedCoupon = React.useMemo(() => {
+    const entered = couponCode.trim().toLowerCase();
+    if (!entered) return null;
+    return activeCoupons.find(c => (c.code || '').toLowerCase() === entered) || null;
+  }, [couponCode, activeCoupons]);
+  const couponActive = !!matchedCoupon;
+
+  const isRetatrutideLabel = (label) => /\bretatrutide\b/i.test(label || '');
+  const lineMatchesCoupon = (label) => {
+    if (!matchedCoupon) return false;
+    if (matchedCoupon.scope === 'all') return true;
+    if (matchedCoupon.scope === 'retatrutide') return isRetatrutideLabel(label);
+    return false;
   };
-  // Returns { orig, eff, discounted } for a cart line label.
+
+  // Per-line effective price.
+  //  - Percent coupons discount each matching line directly (we show strikethrough).
+  //  - Fixed coupons subtract a flat $ amount from the matching subtotal at
+  //    the bottom — line prices stay the same.
   const priceFor = (label) => {
     const m = label.match(/\$([\d,.]+)/);
     const orig = m ? parseFloat(m[1].replace(/,/g, '')) : 0;
-    if (couponActive) {
-      const lower = label.toLowerCase();
-      for (const key of Object.keys(COUPON_PRICES)) {
-        // match "retatrutide — 10mg" but NOT "retatrutide — 100mg" by
-        // requiring a non-digit (or end) right after the key.
-        const idx = lower.indexOf(key);
-        if (idx !== -1) {
-          const next = lower.charAt(idx + key.length);
-          if (!/\d/.test(next)) {
-            return { orig, eff: COUPON_PRICES[key], discounted: true };
-          }
-        }
-      }
+    if (matchedCoupon && matchedCoupon.kind === 'percent' && lineMatchesCoupon(label)) {
+      const pct = parseFloat(matchedCoupon.amount) || 0;
+      const eff = Math.max(0, orig * (1 - pct / 100));
+      return { orig, eff, discounted: true };
     }
     return { orig, eff: orig, discounted: false };
   };
@@ -1242,12 +1260,33 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
   ];
   const shippingCost = SHIPPING_OPTIONS.find(o => o.value === shippingMethod)?.cost ?? 0;
 
-  // Helpers for cart line display
+  // Subtotals
   const subtotalOriginal = cart.reduce((sum, item) => sum + priceFor(item.label).orig * item.qty, 0);
-  const subtotalEffective = cart.reduce((sum, item) => sum + priceFor(item.label).eff  * item.qty, 0);
+  const subtotalAfterLineDiscounts = cart.reduce((sum, item) => sum + priceFor(item.label).eff * item.qty, 0);
+
+  // Fixed-$ coupons: apply once to the matching subtotal, clamped so it can
+  // never push the order negative.
+  let fixedDiscount = 0;
+  if (matchedCoupon && matchedCoupon.kind === 'fixed') {
+    const matchingSubtotal = cart.reduce((sum, item) => {
+      if (!lineMatchesCoupon(item.label)) return sum;
+      return sum + priceFor(item.label).orig * item.qty;
+    }, 0);
+    fixedDiscount = Math.min(matchingSubtotal, parseFloat(matchedCoupon.amount) || 0);
+  }
+
+  const subtotalEffective = Math.max(0, subtotalAfterLineDiscounts - fixedDiscount);
   const couponSavings = subtotalOriginal - subtotalEffective;
   const cartTotal = subtotalEffective + shippingCost;
   const hasPrices = cart.length > 0 && cart.every(item => /\$[\d,.]+/.test(item.label));
+
+  // Human-readable summary of the matched coupon (for the totals row).
+  const couponLabel = matchedCoupon
+    ? `${matchedCoupon.kind === 'percent' ? matchedCoupon.amount + '%' : '$' + matchedCoupon.amount} off${matchedCoupon.scope === 'retatrutide' ? ' Retatrutide' : ''}`
+    : '';
+  // Whether the matched coupon couldn't apply because no qualifying items
+  // are in the cart (e.g. Retatrutide-only coupon but no Retatrutide line).
+  const couponHasNoTarget = couponActive && couponSavings === 0;
 
   return (
     <div className="fade-in">
@@ -1423,12 +1462,12 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
               )}
               {couponActive && couponSavings > 0 && (
                 <p style={{ fontSize: 12, color: '#7be39a', marginTop: 6, letterSpacing: '-0.1px' }}>
-                  You’re saving ${couponSavings.toFixed(2)} on this order.
+                  You’re saving ${couponSavings.toFixed(2)} on this order · {couponLabel}.
                 </p>
               )}
-              {couponActive && couponSavings === 0 && (
+              {couponActive && couponHasNoTarget && (
                 <p style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 6, letterSpacing: '-0.1px' }}>
-                  Code applied. Add Retatrutide 10mg, 20mg, or 30mg to unlock the discount.
+                  Code applied{matchedCoupon.scope === 'retatrutide' ? ', but no Retatrutide items in your cart yet.' : '.'}
                 </p>
               )}
             </div>
@@ -1445,7 +1484,7 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
                 </div>
                 {couponActive && couponSavings > 0 && (
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: '#7be39a' }}>
-                    <span>Coupon “{couponCode.trim()}”</span>
+                    <span>Coupon “{matchedCoupon.code.toUpperCase()}” <span style={{ color: 'rgba(123,227,154,0.7)', fontWeight: 400 }}>({couponLabel})</span></span>
                     <span>− ${couponSavings.toFixed(2)}</span>
                   </div>
                 )}
