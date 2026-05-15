@@ -14,6 +14,9 @@ const CATALOG = [
       { name: 'Cagrilintide', strength: '10mg', category: 'Metabolic', blurb: 'Long-acting amylin analog supporting satiety and weight management.', photo: 'assets/product-cagrilintide.png' },
       { name: '5 Amino 1MQ', strength: '50mg', category: 'Metabolic', blurb: 'Targets NNMT to support fat metabolism and metabolic flexibility.', photo: 'assets/product-5amino1mq.png' },
       { name: 'KLOW', strength: '80mg', category: 'Metabolic', blurb: 'Multi-peptide blend formulated for metabolic and recovery support.', photo: 'assets/product-klow.png' },
+      { name: 'Lipo-C', strength: 'injection', category: 'Metabolic', blurb: 'Lipotropic blend (methionine, inositol, choline + B vitamins) supporting fat metabolism and energy.' },
+      { name: 'Supershred', strength: 'injection', category: 'Metabolic', blurb: 'Advanced lipotropic formula combining fat-mobilizing compounds for accelerated body composition support.' },
+      { name: 'B12', strength: 'injection', category: 'Wellness', blurb: 'Methylcobalamin B12 — supports energy, metabolism, red blood cell production, and neurological function.' },
     ],
   },
   {
@@ -141,13 +144,30 @@ const VialMark = ({ name, strength, tint, size = 140 }) => (
 // ─── Option 3 reveal card ───────────────────────────────────────────────────
 const RevealCard = ({ product, tint, onSchedule }) => {
   const [hover, setHover] = React.useState(false);
+  const panelRef = React.useRef(null);
+  const [panelHeight, setPanelHeight] = React.useState(0);
+
+  // Measure the slide-up panel so we can offset it consistently across all cards.
+  React.useLayoutEffect(() => {
+    if (panelRef.current) {
+      setPanelHeight(panelRef.current.scrollHeight);
+    }
+  }, [product.blurb, product.name]);
+
+  // Fixed card height keeps proportions identical across all cards.
+  const CARD_HEIGHT = 460;
+  // How much of the panel peeks at rest (header strip with category/name/strength).
+  const PEEK_HEIGHT = 96;
+  // Distance to slide down when not hovered.
+  const slideOffset = Math.max(panelHeight - PEEK_HEIGHT, 0);
+
   return (
     <div
       onMouseEnter={() => setHover(true)}
       onMouseLeave={() => setHover(false)}
       style={{
         position: 'relative',
-        width: '100%', height: 380,
+        width: '100%', height: CARD_HEIGHT,
         borderRadius: 24,
         background: `linear-gradient(180deg, #1a1a1c 0%, #0f0f10 100%)`,
         border: `1px solid ${hover ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.06)'}`,
@@ -165,7 +185,7 @@ const RevealCard = ({ product, tint, onSchedule }) => {
       }} />
       {/* Vial */}
       <div style={{
-        position: 'absolute', top: product.photo ? '6%' : '20%', left: '50%',
+        position: 'absolute', top: product.photo ? '4%' : '14%', left: '50%',
         transform: `translate(-50%, ${hover ? '-20px' : '0'}) rotate(${hover ? '-3deg' : '0deg'})`,
         transition: 'transform 0.6s cubic-bezier(0.22, 1, 0.36, 1)',
       }}>
@@ -187,13 +207,15 @@ const RevealCard = ({ product, tint, onSchedule }) => {
         )}
       </div>
       {/* Slide-up panel */}
-      <div style={{
-        position: 'absolute', left: 0, right: 0, bottom: 0,
-        background: 'linear-gradient(180deg, rgba(20,20,22,0) 0%, rgba(20,20,22,0.96) 30%, rgba(20,20,22,1) 100%)',
-        padding: '60px 22px 22px',
-        transform: hover ? 'translateY(0)' : 'translateY(58%)',
-        transition: 'transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)',
-      }}>
+      <div
+        ref={panelRef}
+        style={{
+          position: 'absolute', left: 0, right: 0, bottom: 0,
+          background: 'linear-gradient(180deg, rgba(20,20,22,0) 0%, rgba(20,20,22,0.96) 30%, rgba(20,20,22,1) 100%)',
+          padding: '48px 22px 22px',
+          transform: hover ? 'translateY(0)' : `translateY(${slideOffset}px)`,
+          transition: 'transform 0.5s cubic-bezier(0.22, 1, 0.36, 1)',
+        }}>
         <p style={{ fontSize: 11, letterSpacing: 1.5, color: tint, textTransform: 'uppercase', fontWeight: 600, marginBottom: 4 }}>{product.category}</p>
         <h3 style={{ fontSize: 20, fontWeight: 600, color: '#f5f5f7', marginBottom: 4, letterSpacing: '-0.01em' }}>{product.name}</h3>
         <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.5)', marginBottom: 14 }}>{product.strength}</p>

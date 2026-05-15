@@ -14,6 +14,9 @@ const CATALOG = [
       { name: 'Cagrilintide', strength: '10mg', category: 'Metabolic', blurb: 'Long-acting amylin analog supporting satiety and weight management.', photo: 'assets/product-cagrilintide.png' },
       { name: '5 Amino 1MQ', strength: '50mg', category: 'Metabolic', blurb: 'Targets NNMT to support fat metabolism and metabolic flexibility.', photo: 'assets/product-5amino1mq.png' },
       { name: 'KLOW', strength: '80mg', category: 'Metabolic', blurb: 'Multi-peptide blend formulated for metabolic and recovery support.', photo: 'assets/product-klow.png' },
+      { name: 'Lipo-C', strength: 'injection', category: 'Metabolic', blurb: 'Lipotropic blend (methionine, inositol, choline + B vitamins) supporting fat metabolism and energy.' },
+      { name: 'Supershred', strength: 'injection', category: 'Metabolic', blurb: 'Advanced lipotropic formula combining fat-mobilizing compounds for accelerated body composition support.' },
+      { name: 'B12', strength: 'injection', category: 'Wellness', blurb: 'Methylcobalamin B12 — supports energy, metabolism, red blood cell production, and neurological function.' },
     ],
   },
   {
