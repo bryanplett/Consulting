@@ -45,7 +45,7 @@ const CATALOG = [
     products: [
       { name: 'NAD+', strength: '500mg', category: 'Longevity', blurb: 'Foundational coenzyme for cellular energy and DNA repair. Supports accelerated fat loss, energy & focus, metabolism, and muscle preservation.', photo: 'assets/product-nad.png' },
       { name: 'SS-31', strength: '10mg', category: 'Mitochondrial', blurb: 'Cardiolipin-binding peptide that protects and optimizes mitochondria. Improves mitochondrial function, reduces oxidative stress, and supports neuroprotection.', photo: 'assets/product-ss31.png' },
-      { name: 'Mots-C', strength: '10mg', category: 'Mitochondrial', blurb: 'Mitochondrial-derived peptide supporting metabolic health, insulin sensitivity, physical performance, and cellular longevity.', photo: 'assets/product-motsc.png' },
+      { name: 'MOTS-c', strength: '10mg', category: 'Mitochondrial', blurb: 'Mitochondrial-derived peptide supporting metabolic health, insulin sensitivity, physical performance, and cellular longevity.', photo: 'assets/product-motsc.png' },
       { name: 'Epithalon', strength: '10mg', category: 'Longevity', blurb: 'Telomerase activator studied for telomere extension, improved sleep and pineal function, anti-aging, and immune support.', photo: 'assets/product-epithalon.png' },
     ],
   },
