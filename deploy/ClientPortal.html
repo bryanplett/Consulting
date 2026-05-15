@@ -1058,6 +1058,11 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
   const [fieldErrors, setFieldErrors] = React.useState({});
   const [success, setSuccess] = React.useState(false);
   const [submitting, setSubmitting] = React.useState(false);
+  // Pre-checkout reminder modal: gentle nudge about lyophilized peptide form,
+  // BAC water requirement, and syringes/wipes accessory pack. Shown ONCE per
+  // checkout, only when the cart contains a reconstitution-needed product.
+  const [showReminder, setShowReminder] = React.useState(false);
+  const reminderConfirmedRef = React.useRef(false);
 
   // Hydrate shipping fields from the saved profile once it arrives.
   React.useEffect(() => {
@@ -1107,9 +1112,32 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
 
   const cartLabels = cart.map(c => c.label);
 
+  // Reminder modal: detect what's in the cart so we know whether to show it
+  // and which quick-add buttons to expose.
+  const cartNeedsReconstitution = cart.some(it =>
+    /\b\d+(?:\.\d+)?\s*(?:mg|IU)\b/i.test(it.label)
+  );
+  const cartHasBacWater     = cart.some(it => /bac water/i.test(it.label));
+  const cartHasAccessoryPack = cart.some(it => /accessory pack/i.test(it.label));
+  const reminderRelevant = cartNeedsReconstitution && (!cartHasBacWater || !cartHasAccessoryPack);
+
+  // Find a label in productOptions that startsWith the given prefix. Lets us
+  // quick-add the right BAC Water / Accessory Pack line (including price suffix).
+  const findOptionLabel = (prefix) => {
+    const lower = prefix.toLowerCase();
+    return productOptions.find(l => l.toLowerCase().startsWith(lower)) || null;
+  };
+
   const submit = async (e) => {
     e.preventDefault();
     if (cart.length === 0 || submitting) return;
+
+    // Pre-checkout reminder: lyophilized form / BAC water / accessory pack.
+    // Only fires once per checkout (confirmed via ref so it survives re-render).
+    if (reminderRelevant && !reminderConfirmedRef.current) {
+      setShowReminder(true);
+      return;
+    }
 
     // Validate required shipping fields. We trim and require both — unless
     // the client is picking up / dropping off in person, in which case a
@@ -1548,7 +1576,7 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
               </div>
             )}
 
-            <form onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+            <form data-checkout-form="1" onSubmit={submit} style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
               {/* Shipping section header */}
               <div style={{
                 fontSize: 11, letterSpacing: 1.5, color: '#2997ff',
@@ -1758,6 +1786,212 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
           </div>
         )}
       </div>
+
+      {/* ── Pre-checkout reminder modal ───────────────────────────────────── */}
+      {showReminder && (
+        <div
+          onClick={() => setShowReminder(false)}
+          style={{
+            position: 'fixed', inset: 0,
+            background: 'rgba(0,0,0,0.72)',
+            backdropFilter: 'blur(3px)',
+            WebkitBackdropFilter: 'blur(3px)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: 24, zIndex: 9000, overflowY: 'auto',
+            animation: 'fadeIn 0.2s ease',
+          }}>
+          <div
+            onClick={(e) => e.stopPropagation()}
+            role="dialog" aria-modal="true"
+            style={{
+              width: '100%', maxWidth: 520,
+              background: '#141416',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: 22,
+              boxShadow: '0 30px 80px -20px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.02)',
+              overflow: 'hidden',
+            }}>
+            <div style={{ padding: '32px 32px 18px', textAlign: 'center', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
+              <div style={{
+                width: 52, height: 52, borderRadius: '50%', margin: '0 auto 16px',
+                background: 'rgba(41,151,255,0.10)', border: '1px solid rgba(41,151,255,0.32)',
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: '#2997ff',
+              }}>
+                {/* Flask icon */}
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                  <path d="M9 3h6M10 3v6.5L5.5 18a2 2 0 0 0 1.7 3h9.6a2 2 0 0 0 1.7-3L14 9.5V3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+                  <path d="M7.5 14h9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/>
+                </svg>
+              </div>
+              <h2 style={{ fontSize: 22, fontWeight: 600, letterSpacing: '-0.02em', marginBottom: 8, color: '#f5f5f7' }}>
+                Quick reminder before you check out
+              </h2>
+              <p style={{ fontSize: 14, color: 'rgba(255,255,255,0.55)', lineHeight: 1.55, maxWidth: 400, margin: '0 auto' }}>
+                A few things to keep in mind so your order is ready to use when it arrives.
+              </p>
+            </div>
+
+            <div style={{ padding: '22px 28px' }}>
+              {/* Item 1 — Lyophilized */}
+              <div style={{ display: 'flex', gap: 14, padding: '12px 0' }}>
+                <div style={{
+                  flexShrink: 0, width: 28, height: 28, borderRadius: 8,
+                  background: 'rgba(191,90,242,0.10)', border: '1px solid rgba(191,90,242,0.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#bf5af2',
+                  fontSize: 13, fontWeight: 600,
+                }}>1</div>
+                <div style={{ fontSize: 14, lineHeight: 1.55, color: 'rgba(255,255,255,0.82)' }}>
+                  All peptides ship in <strong style={{ color: '#f5f5f7' }}>lyophilized (freeze-dried) powder form</strong> for research-use stability.
+                </div>
+              </div>
+
+              {/* Item 2 — BAC Water */}
+              <div style={{ display: 'flex', gap: 14, padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{
+                  flexShrink: 0, width: 28, height: 28, borderRadius: 8,
+                  background: 'rgba(41,151,255,0.10)', border: '1px solid rgba(41,151,255,0.3)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2997ff',
+                  fontSize: 13, fontWeight: 600,
+                }}>2</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, lineHeight: 1.55, color: 'rgba(255,255,255,0.82)' }}>
+                    <strong style={{ color: '#f5f5f7' }}>Bacteriostatic water is required</strong> for reconstitution before use.
+                  </div>
+                  {!cartHasBacWater && (() => {
+                    const bacOptions = productOptions.filter(l => /^bac water/i.test(l));
+                    if (bacOptions.length === 0) return null;
+                    return (
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                        {bacOptions.map(label => {
+                          const display = label.replace(/\s+—\s+\$.+$/, '').replace(/^BAC Water — /, '');
+                          const price = label.match(/\$[\d.]+/)?.[0] || '';
+                          return (
+                            <button
+                              key={label}
+                              type="button"
+                              onClick={() => addToCart(label)}
+                              style={{
+                                background: 'rgba(41,151,255,0.10)',
+                                color: '#2997ff',
+                                border: '1px solid rgba(41,151,255,0.35)',
+                                borderRadius: 8, padding: '7px 12px',
+                                fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                                fontFamily: 'inherit',
+                              }}>
+                              + BAC Water {display}{' '}
+                              <span style={{ color: 'rgba(255,255,255,0.5)' }}>{price}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
+                  })()}
+                  {cartHasBacWater && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: '#86efac', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <circle cx="7" cy="7" r="6" stroke="#86efac" strokeWidth="1.4"/>
+                        <path d="M4.5 7L6.3 8.8L9.5 5.5" stroke="#86efac" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      BAC Water is in your cart.
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Item 3 — Accessory Pack */}
+              <div style={{ display: 'flex', gap: 14, padding: '12px 0', borderTop: '1px solid rgba(255,255,255,0.05)' }}>
+                <div style={{
+                  flexShrink: 0, width: 28, height: 28, borderRadius: 8,
+                  background: 'rgba(255,159,10,0.10)', border: '1px solid rgba(255,159,10,0.32)',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#ff9f0a',
+                  fontSize: 13, fontWeight: 600,
+                }}>3</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 14, lineHeight: 1.55, color: 'rgba(255,255,255,0.82)' }}>
+                    Need <strong style={{ color: '#f5f5f7' }}>syringes and alcohol wipes</strong>? Add an accessory pack to your order.
+                  </div>
+                  {!cartHasAccessoryPack && (
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 10 }}>
+                      {['Accessory Pack — 01', 'Accessory Pack — 02', 'Accessory Pack — 03'].map(prefix => {
+                        const label = findOptionLabel(prefix);
+                        if (!label) return null;
+                        return (
+                          <button
+                            key={prefix}
+                            type="button"
+                            onClick={() => addToCart(label)}
+                            style={{
+                              background: 'rgba(255,159,10,0.08)',
+                              color: '#ff9f0a',
+                              border: '1px solid rgba(255,159,10,0.30)',
+                              borderRadius: 8, padding: '7px 12px',
+                              fontSize: 13, fontWeight: 500, cursor: 'pointer',
+                              fontFamily: 'inherit',
+                            }}>
+                            + {label.replace(/\s+—\s+\$.+$/, '').replace('Accessory Pack — ', 'Pack ')}{' '}
+                            <span style={{ color: 'rgba(255,255,255,0.5)' }}>{label.match(/\$[\d.]+/)?.[0] || ''}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                  {cartHasAccessoryPack && (
+                    <div style={{ marginTop: 8, fontSize: 12, color: '#86efac', display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+                        <circle cx="7" cy="7" r="6" stroke="#86efac" strokeWidth="1.4"/>
+                        <path d="M4.5 7L6.3 8.8L9.5 5.5" stroke="#86efac" strokeWidth="1.4" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      An accessory pack is in your cart.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div style={{
+              padding: '18px 28px 26px',
+              display: 'flex', gap: 10,
+              borderTop: '1px solid rgba(255,255,255,0.06)',
+            }}>
+              <button
+                type="button"
+                onClick={() => setShowReminder(false)}
+                style={{
+                  background: 'transparent', color: 'rgba(255,255,255,0.6)',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: 12, padding: '12px 18px',
+                  fontSize: 14, cursor: 'pointer', fontFamily: 'inherit',
+                }}>
+                ← Back to cart
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  reminderConfirmedRef.current = true;
+                  setShowReminder(false);
+                  // Re-fire the form submit programmatically. submit() will
+                  // skip the reminder block (ref is set) and proceed to the
+                  // shipping validation + order insert flow.
+                  const form = document.querySelector('form[data-checkout-form="1"]');
+                  if (form && typeof form.requestSubmit === 'function') {
+                    form.requestSubmit();
+                  } else if (form) {
+                    // Older browsers — synthesize a submit event.
+                    form.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                  }
+                }}
+                style={{
+                  flex: 1, background: '#0066cc', color: '#fff',
+                  border: 'none', borderRadius: 12, padding: '12px 18px',
+                  fontSize: 14, fontWeight: 500, cursor: 'pointer', fontFamily: 'inherit',
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 8,
+                }}>
+                Got it — Place Order
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

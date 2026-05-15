@@ -540,6 +540,26 @@ const ClientsList = ({ clients, onSelect, onEdit, onRefresh }) => {
   const [form, setForm] = React.useState({ name: '', email: '', phone: '' });
   const [busy, setBusy] = React.useState(false);
   const [msg, setMsg] = React.useState('');
+  const [savingPricelist, setSavingPricelist] = React.useState(null); // client id mid-save
+
+  // Available pricelist tiers (standard, wholesale, …). Falls back to a
+  // hard-coded pair if pricelists.js hasn't loaded for any reason.
+  const pricelistOptions = (typeof window.getPricelistOptions === 'function')
+    ? window.getPricelistOptions()
+    : [{ value: 'standard', label: 'Standard' }, { value: 'wholesale', label: 'Wholesale' }];
+
+  const updatePricelist = async (client, key) => {
+    setSavingPricelist(client.id);
+    const { error } = await sb.from('clients').update({ pricelist: key }).eq('id', client.id);
+    setSavingPricelist(null);
+    if (error) {
+      alert('Failed to update pricelist: ' + error.message);
+      return;
+    }
+    // Mutate locally so the dropdown reflects the new value without a full refetch.
+    client.pricelist = key;
+    onRefresh && onRefresh();
+  };
 
   const addClient = async (e) => {
     e.preventDefault();
@@ -588,19 +608,50 @@ const ClientsList = ({ clients, onSelect, onEdit, onRefresh }) => {
               <th style={{ textAlign: 'left', padding: '14px 20px', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Name</th>
               <th style={{ textAlign: 'left', padding: '14px 20px', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Email</th>
               <th style={{ textAlign: 'left', padding: '14px 20px', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Phone</th>
+              <th style={{ textAlign: 'left', padding: '14px 20px', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Pricelist</th>
               <th style={{ textAlign: 'left', padding: '14px 20px', fontSize: 12, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>Status</th>
               <th></th>
             </tr>
           </thead>
           <tbody>
             {clients.length === 0 && (
-              <tr><td colSpan={5} style={{ padding: 32, textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>No clients yet.</td></tr>
+              <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: 'rgba(255,255,255,0.4)' }}>No clients yet.</td></tr>
             )}
             {clients.map(c => (
               <tr key={c.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
                 <td style={{ padding: '16px 20px', fontWeight: 500 }}>{c.name}</td>
                 <td style={{ padding: '16px 20px', color: 'rgba(255,255,255,0.7)' }}>{c.email}</td>
                 <td style={{ padding: '16px 20px', color: 'rgba(255,255,255,0.7)' }}>{c.phone || '—'}</td>
+                <td style={{ padding: '12px 16px' }}>
+                  <select
+                    value={c.pricelist || 'standard'}
+                    disabled={savingPricelist === c.id}
+                    onChange={(e) => updatePricelist(c, e.target.value)}
+                    onClick={(e) => e.stopPropagation()}
+                    title="Change this client's pricelist tier"
+                    style={{
+                      background: 'rgba(255,255,255,0.06)',
+                      color: '#fff',
+                      border: '1px solid rgba(255,255,255,0.10)',
+                      borderRadius: 8,
+                      padding: '6px 28px 6px 10px',
+                      fontSize: 13,
+                      fontFamily: 'inherit',
+                      cursor: savingPricelist === c.id ? 'wait' : 'pointer',
+                      opacity: savingPricelist === c.id ? 0.6 : 1,
+                      appearance: 'none',
+                      backgroundImage: "url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23ffffff' stroke-width='1.4' fill='none' stroke-linecap='round'/%3E%3C/svg%3E\")",
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 10px center',
+                      minWidth: 120,
+                    }}>
+                    {pricelistOptions.map(opt => (
+                      <option key={opt.value} value={opt.value} style={{ background: '#1a1a1c', color: '#fff' }}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </td>
                 <td style={{ padding: '16px 20px' }}>
                   <span className="tag" style={{ background: c.status === 'active' ? 'rgba(52,199,89,0.14)' : 'rgba(255,255,255,0.08)', color: c.status === 'active' ? '#34c759' : 'rgba(255,255,255,0.6)' }}>
                     {c.status || 'active'}
