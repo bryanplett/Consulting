@@ -1141,15 +1141,44 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
       const { data: { user } } = await sb.auth.getUser();
       if (user) {
         for (const item of cart) {
-          const base = { client_id: user.id, notes: notes || null, status: 'pending' };
-          let { data, error } = await sb.from('orders')
-            .insert({ ...base, product: item.label, quantity: item.qty })
-            .select().single();
+          // Per-order details captured at checkout. Until the 2026_order_details
+          // migration was added, all of these were collected on the form and
+          // then thrown away — admin only saw product/qty/notes. Now persisted.
+          const orderDetails = {
+            client_id: user.id,
+            notes: notes || null,
+            status: 'pending',
+            payment_method:   paymentMethod || null,
+            shipping_method:  shippingMethod || null,
+            shipping_address: shippingAddress.trim() || userData?.address || null,
+            shipping_cost:    Number.isFinite(shippingCost) ? shippingCost : null,
+            phone_at_order:   phone.trim() || userData?.phone || null,
+            coupon_code:      couponActive ? matchedCoupon.code : (couponCode.trim() || null),
+          };
+          const tryInsert = (lineCols) =>
+            sb.from('orders').insert({ ...orderDetails, ...lineCols }).select().single();
+
+          // 1st try: current schema (product/quantity) + new detail columns.
+          let { data, error } = await tryInsert({ product: item.label, quantity: item.qty });
+          // 2nd try: legacy line-item column names (item/qty).
           if (error && /column .* does not exist/i.test(error.message || '')) {
-            const retry = await sb.from('orders')
-              .insert({ ...base, item: item.label, qty: item.qty })
-              .select().single();
+            const retry = await tryInsert({ item: item.label, qty: item.qty });
             data = retry.data; error = retry.error;
+          }
+          // 3rd try: order_details migration not yet applied — fall back to a
+          // minimal insert so checkout still works. Admin will see product/qty
+          // only for these orders, same as before.
+          if (error && /column .* does not exist/i.test(error.message || '')) {
+            const minimal = { client_id: user.id, notes: notes || null, status: 'pending' };
+            let r = await sb.from('orders')
+              .insert({ ...minimal, product: item.label, quantity: item.qty })
+              .select().single();
+            if (r.error && /column .* does not exist/i.test(r.error.message || '')) {
+              r = await sb.from('orders')
+                .insert({ ...minimal, item: item.label, qty: item.qty })
+                .select().single();
+            }
+            data = r.data; error = r.error;
           }
           if (error) throw error;
           insertedOrders.push(data);
