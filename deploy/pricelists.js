@@ -14,7 +14,7 @@ window.PRICELISTS = {
     products: [
       // Consulting Services
       { name: 'Nutrition Plan — 1 Month',                       price: 350, category: 'Consulting' },
-      { name: 'Workout Routine — 1 Month',                      price: 250, category: 'Consulting' },
+      { name: 'Workout Plan — 12 weeks',                        price: 250, category: 'Consulting' },
       { name: 'Hormone / Bloodwork Consultation — 1 Month',     price: 250, category: 'Consulting' },
       { name: 'Nutrition / Workout / Hormone Bundle — 1 Month', price: 600, category: 'Consulting' },
       // Peptides
@@ -46,6 +46,9 @@ window.PRICELISTS = {
       { name: 'KLOW — 80mg',           price: 200, category: 'Peptides' },
       { name: 'NAD+ — 1000mg',         price: 150, category: 'Peptides' },
       { name: 'Glutathione — 1200mg',  price: 125, category: 'Peptides' },
+      { name: 'Tesamorelin — 10mg',    price:  80, category: 'Peptides' },
+      { name: 'Wolverine — 10mg',      price: 125, category: 'Peptides' },
+      { name: 'GHK-Cu — 50mg',         price:  55, category: 'Peptides' },
       // Injectables / Wellness
       { name: 'Lipo-C',                price:  100, category: 'Wellness' },
       { name: 'Supershred',            price:  100, category: 'Wellness' },
@@ -78,7 +81,7 @@ window.PRICELISTS = {
     products: [
       // Consulting Services
       { name: 'Nutrition Plan — 1 Month',                       price: 250, category: 'Consulting' },
-      { name: 'Workout Routine — 1 Month',                      price: 175, category: 'Consulting' },
+      { name: 'Workout Plan — 12 weeks',                        price: 175, category: 'Consulting' },
       { name: 'Hormone / Bloodwork Consultation — 1 Month',     price: 175, category: 'Consulting' },
       { name: 'Nutrition / Workout / Hormone Bundle — 1 Month', price: 450, category: 'Consulting' },
       // Peptides
@@ -110,6 +113,9 @@ window.PRICELISTS = {
       { name: 'KLOW — 80mg',           price: 150, category: 'Peptides' },
       { name: 'NAD+ — 1000mg',         price: 110, category: 'Peptides' },
       { name: 'Glutathione — 1200mg',  price:  95, category: 'Peptides' },
+      { name: 'Tesamorelin — 10mg',    price:  40, category: 'Peptides' },
+      { name: 'Wolverine — 10mg',      price:  75, category: 'Peptides' },
+      { name: 'GHK-Cu — 50mg',         price:  35, category: 'Peptides' },
       // Injectables / Wellness
       { name: 'Lipo-C',                price:  75, category: 'Wellness' },
       { name: 'Supershred',            price:  75, category: 'Wellness' },

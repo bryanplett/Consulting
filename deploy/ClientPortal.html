@@ -11,6 +11,7 @@
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js"></script>
 <script src="pricelists.js"></script>
+<script src="inventory-helper.js"></script>
 <script type="text/babel" src="weighin.jsx"></script>
 <script type="text/babel" src="onboarding-quiz.jsx"></script>
 <script type="text/babel" src="age-verification.jsx"></script>
@@ -1189,6 +1190,21 @@ const OrderForm = ({ userData, onOrderPlaced }) => {
       }
     } catch (err) {
       console.error('Order insert failed:', err);
+    }
+
+    // 1b. Decrement inventory for each successfully inserted order. Best-
+    //     effort: a stock-update failure must NOT block the checkout flow.
+    //     The inventory_applied flag prevents double-counting if Admin later
+    //     marks the same order 'completed'.
+    if (insertedOrders.length && typeof window.decrementInventoryForOrder === 'function') {
+      for (const o of insertedOrders) {
+        try {
+          const res = await window.decrementInventoryForOrder(o);
+          if (!res.ok) console.warn('Inventory decrement failed:', res.error);
+        } catch (e) {
+          console.warn('Inventory decrement threw:', e);
+        }
+      }
     }
 
     // 2. Email/SMS notification via Formspree — single message with full cart
