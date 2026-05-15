@@ -27,78 +27,31 @@
   }
 
   // ── Decrement stock for an order. Idempotent via inventory_applied flag.
+  // Uses the SECURITY DEFINER RPC apply_order_to_inventory because direct
+  // writes to `inventory` are blocked by RLS for non-admin users.
   async function decrementInventoryForOrder(order) {
     const sb = getSb();
     if (!sb) return { ok: false, error: 'Supabase client not available' };
     try {
-      const { data: fresh, error: fetchErr } = await sb.from('orders')
-        .select('id, product, item, quantity, qty, inventory_applied')
-        .eq('id', order.id).single();
-      if (fetchErr) return { ok: false, error: fetchErr.message };
-      if (fresh.inventory_applied) return { ok: true, alreadyApplied: true };
-
-      const productLabel = fresh.product || fresh.item || order.product || order.item || '';
-      const qty = parseInt(fresh.quantity ?? fresh.qty ?? order.quantity ?? order.qty ?? 1, 10) || 1;
-      const name = canonicalProductName(productLabel);
-      if (!name) return { ok: false, error: 'No product name on order.' };
-
-      const { data: inv } = await sb.from('inventory')
-        .select('stock').eq('product_name', name).maybeSingle();
-      const current = inv?.stock ?? 0;
-      const next = current - qty;
-
-      const { error: upErr } = await sb.from('inventory').upsert(
-        { product_name: name, stock: next, updated_at: new Date().toISOString() },
-        { onConflict: 'product_name' }
-      );
-      if (upErr) return { ok: false, error: upErr.message };
-
-      const { error: flagErr } = await sb.from('orders')
-        .update({ inventory_applied: true }).eq('id', order.id);
-      if (flagErr && !/column .* does not exist/i.test(flagErr.message)) {
-        return { ok: false, error: flagErr.message };
-      }
-      return { ok: true, name, qty, newStock: next };
+      const { data, error } = await sb.rpc('apply_order_to_inventory', { p_order_id: order.id });
+      if (error) return { ok: false, error: error.message };
+      // Postgres function returns jsonb { ok, error?, ... }
+      if (data && data.ok === false) return { ok: false, error: data.error || 'rpc rejected' };
+      return { ok: true, ...(data || {}) };
     } catch (err) {
       return { ok: false, error: err.message || String(err) };
     }
   }
 
-  // ── Restock: reverse a previous decrement. Used when an order is cancelled.
-  // Only runs if inventory_applied=true; otherwise no-op (already-pending order
-  // never decremented the count, nothing to put back).
+  // ── Restock: reverse a previous decrement. Admin-only via the RPC.
   async function restockInventoryForOrder(order) {
     const sb = getSb();
     if (!sb) return { ok: false, error: 'Supabase client not available' };
     try {
-      const { data: fresh, error: fetchErr } = await sb.from('orders')
-        .select('id, product, item, quantity, qty, inventory_applied')
-        .eq('id', order.id).single();
-      if (fetchErr) return { ok: false, error: fetchErr.message };
-      if (!fresh.inventory_applied) return { ok: true, notApplied: true };
-
-      const productLabel = fresh.product || fresh.item || order.product || order.item || '';
-      const qty = parseInt(fresh.quantity ?? fresh.qty ?? order.quantity ?? order.qty ?? 1, 10) || 1;
-      const name = canonicalProductName(productLabel);
-      if (!name) return { ok: false, error: 'No product name on order.' };
-
-      const { data: inv } = await sb.from('inventory')
-        .select('stock').eq('product_name', name).maybeSingle();
-      const current = inv?.stock ?? 0;
-      const next = current + qty;
-
-      const { error: upErr } = await sb.from('inventory').upsert(
-        { product_name: name, stock: next, updated_at: new Date().toISOString() },
-        { onConflict: 'product_name' }
-      );
-      if (upErr) return { ok: false, error: upErr.message };
-
-      const { error: flagErr } = await sb.from('orders')
-        .update({ inventory_applied: false }).eq('id', order.id);
-      if (flagErr && !/column .* does not exist/i.test(flagErr.message)) {
-        return { ok: false, error: flagErr.message };
-      }
-      return { ok: true, name, qty, newStock: next };
+      const { data, error } = await sb.rpc('revert_order_from_inventory', { p_order_id: order.id });
+      if (error) return { ok: false, error: error.message };
+      if (data && data.ok === false) return { ok: false, error: data.error || 'rpc rejected' };
+      return { ok: true, ...(data || {}) };
     } catch (err) {
       return { ok: false, error: err.message || String(err) };
     }
