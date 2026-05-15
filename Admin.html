@@ -74,6 +74,9 @@
   .admin-header { padding: 20px 32px; }
   .admin-header-actions { gap: 16px; }
   .admin-main { max-width: 1100px; margin: 0 auto; padding: 40px 32px; }
+  /* Wider container for views that show the orders table — it has too many
+     columns to fit comfortably in 1100px. */
+  .admin-main.is-wide { max-width: 1480px; }
   .admin-email { display: inline; }
   .table-wrap { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; }
   .table-wrap table { min-width: 640px; }
@@ -116,9 +119,112 @@ const STATUS_COLORS = {
   delivered: { bg: 'rgba(255,255,255,0.10)', fg: 'rgba(255,255,255,0.7)' },
   completed: { bg: 'rgba(52,199,89,0.14)', fg: '#34c759' },
   cancelled: { bg: 'rgba(255,69,58,0.14)', fg: '#ff453a' },
+  unpaid:    { bg: 'rgba(255,159,10,0.14)', fg: '#ff9f0a' },
 };
 
+// Legacy combined list (kept for the status-filter chips on All Orders, which
+// search both fulfillment and payment values).
 const STATUS_OPTIONS = ['pending', 'invoiced', 'paid', 'shipped', 'delivered', 'completed', 'cancelled'];
+
+// Split status: one dropdown for fulfillment, one for payment.
+// Migration 2026_payment_status.sql moved 'invoiced'/'paid' off of `status`
+// onto its own `payment_status` column.
+const FULFILLMENT_OPTIONS = ['pending', 'shipped', 'delivered', 'completed', 'cancelled'];
+const PAYMENT_OPTIONS     = ['unpaid', 'invoiced', 'paid'];
+
+// Read effective fulfillment + payment from an order row, transparently
+// handling legacy rows (where 'invoiced'/'paid' was stored in `status`
+// because the migration hadn't run yet).
+function readStatuses(o) {
+  const rawStatus = o.status || 'pending';
+  const isLegacyPayment = rawStatus === 'paid' || rawStatus === 'invoiced';
+  const fulfillment = isLegacyPayment ? 'pending' : rawStatus;
+  // payment_status (new column) wins; otherwise infer from legacy status.
+  let payment = o.payment_status || (isLegacyPayment ? rawStatus : null);
+  return { fulfillment, payment: payment || 'unpaid' };
+}
+
+// ─── Pricing helpers ─────────────────────────────────────────────────────────
+// Product labels look like "Retatrutide — 10mg — $160". Extract the price.
+function priceFromLabel(label) {
+  const m = (label || '').match(/\$([\d,.]+)/);
+  return m ? parseFloat(m[1].replace(/,/g, '')) || 0 : 0;
+}
+
+function couponMatchesLabel(coupon, label) {
+  if (!coupon) return false;
+  if (coupon.scope === 'all') return true;
+  if (coupon.scope === 'retatrutide') return /\bretatrutide\b/i.test(label || '');
+  return false;
+}
+
+// Compute pricing for a single order *group* (one checkout, possibly N lines).
+// shipping/coupon/payment fields are duplicated on every line by the portal,
+// so we read them off the first line.
+function computeGroupTotals(groupOrders, couponsByCode) {
+  const first = groupOrders[0] || {};
+  const coupon = first.coupon_code
+    ? (couponsByCode[String(first.coupon_code).toLowerCase()] || null)
+    : null;
+  let original = 0;
+  let afterPctDiscount = 0;
+  for (const o of groupOrders) {
+    const label = o.product || o.item || '';
+    const qty = parseInt(o.quantity ?? o.qty ?? 1, 10) || 1;
+    const price = priceFromLabel(label);
+    original += price * qty;
+    if (coupon && coupon.kind === 'percent' && couponMatchesLabel(coupon, label)) {
+      const pct = parseFloat(coupon.amount) || 0;
+      afterPctDiscount += Math.max(0, price * (1 - pct / 100)) * qty;
+    } else {
+      afterPctDiscount += price * qty;
+    }
+  }
+  let fixedDiscount = 0;
+  if (coupon && coupon.kind === 'fixed') {
+    const matchingSubtotal = groupOrders.reduce((s, o) => {
+      const label = o.product || o.item || '';
+      const qty = parseInt(o.quantity ?? o.qty ?? 1, 10) || 1;
+      return couponMatchesLabel(coupon, label) ? s + priceFromLabel(label) * qty : s;
+    }, 0);
+    fixedDiscount = Math.min(matchingSubtotal, parseFloat(coupon.amount) || 0);
+  }
+  const subtotal = Math.max(0, afterPctDiscount - fixedDiscount);
+  const discount = Math.max(0, original - subtotal);
+  const shipping = Number(first.shipping_cost || 0) || 0;
+  const total = subtotal + shipping;
+  return { coupon, original, subtotal, discount, shipping, total };
+}
+
+// Group consecutive orders from the same checkout. The client portal inserts
+// one `orders` row per cart line; they share (client_id, payment_method,
+// shipping_method, coupon_code) and have `created_at` within seconds of each
+// other. We collapse them into one visual order.
+//   `sorted` is expected to be newest-first.
+function groupOrders(sorted) {
+  const groups = [];
+  for (const o of sorted) {
+    const t = new Date(o.created_at || o.ordered_at || 0).getTime();
+    const key = [
+      o.client_id || '',
+      o.payment_method || '',
+      o.shipping_method || '',
+      o.coupon_code || '',
+      o.shipping_address || '',
+    ].join('|');
+    const last = groups[groups.length - 1];
+    // Same checkout if same key AND within 5 minutes of the group's most
+    // recent line (orders flow in desc, so we extend backwards in time).
+    if (last && last.key === key && Math.abs(t - last.minT) <= 5 * 60 * 1000) {
+      last.orders.push(o);
+      last.minT = Math.min(last.minT, t);
+      last.maxT = Math.max(last.maxT, t);
+    } else {
+      groups.push({ key, orders: [o], minT: t, maxT: t });
+    }
+  }
+  return groups;
+}
 
 // ─── Inventory helper ────────────────────────────────────────────────────────────────
 // Cart labels look like "Retatrutide — 10mg — $160". The inventory table is
@@ -169,6 +275,212 @@ async function decrementInventoryForOrder(order) {
     return { ok: false, error: err.message || String(err) };
   }
 }
+
+// ─── Shared Orders Table ─────────────────────────────────────────────────────
+// Renders a list of order rows as a flat table, with the portal's per-line
+// inserts visually grouped back into single checkouts. Used by both the
+// ClientDetail "orders" tab (showClient=false) and the global AllOrders view.
+const OrdersTable = ({
+  orders, couponsByCode, showClient, client, clientById,
+  onOpenClient, onSetGroupStatus, onSetGroupPaymentStatus,
+}) => {
+  const groups = React.useMemo(() => groupOrders(orders || []), [orders]);
+
+  if (!orders || orders.length === 0) {
+    return (
+      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ padding: 24, color: 'rgba(255,255,255,0.4)' }}>No orders.</div>
+      </div>
+    );
+  }
+
+  const headers = showClient
+    ? ['Date', 'Client', 'Items', 'Payment', 'Shipping', 'Total', 'Notes', 'Fulfillment', 'Payment', '']
+    : ['Date', 'Items', 'Payment', 'Shipping', 'Total', 'Notes', 'Fulfillment', 'Payment', ''];
+
+  // Column widths — explicit, so the action column (right) doesn't get
+  // squeezed off-screen when the page is narrower than the table.
+  const colWidths = showClient
+    ? ['96px',  '180px', '300px', '120px', '220px', '140px', '160px', '110px', '110px', '180px']
+    : ['96px',           '300px', '120px', '220px', '140px', '160px', '110px', '110px', '180px'];
+
+  return (
+    <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+      <div className="table-wrap">
+        <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: showClient ? 1400 : 1240 }}>
+          <colgroup>
+            {colWidths.map((w, i) => <col key={i} style={{ width: w }} />)}
+          </colgroup>
+          <thead>
+            <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
+              {headers.map((h, i) => (
+                <th key={i} style={{
+                  textAlign: 'left', padding: '12px 18px',
+                  fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)',
+                  textTransform: 'uppercase', letterSpacing: 0.5,
+                  whiteSpace: 'nowrap',
+                }}>{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {groups.map(g => {
+              const first = g.orders[0];
+              const c = showClient ? (clientById && clientById[first.client_id]) : client;
+              const totals = computeGroupTotals(g.orders, couponsByCode);
+              const { fulfillment, payment } = readStatuses(first);
+              const sc  = STATUS_COLORS[fulfillment] || STATUS_COLORS.pending;
+              const pc  = STATUS_COLORS[payment]     || STATUS_COLORS.unpaid;
+              const couponLabel = totals.coupon
+                ? `${totals.coupon.kind === 'percent'
+                      ? totals.coupon.amount + '%'
+                      : '$' + totals.coupon.amount} off${totals.coupon.scope === 'retatrutide' ? ' Retatrutide' : ''}`
+                : '';
+              return (
+                <tr key={first.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)', verticalAlign: 'top' }}>
+                  <td style={{ padding: '14px 18px', color: 'rgba(255,255,255,0.6)', fontSize: 13, whiteSpace: 'nowrap' }}>
+                    {new Date(first.created_at || first.ordered_at).toLocaleDateString()}
+                  </td>
+                  {showClient && (
+                    <td style={{ padding: '14px 18px', fontSize: 14 }}>
+                      {c ? (
+                        <button onClick={() => onOpenClient && onOpenClient(c)}
+                          style={{ background: 'transparent', border: 'none', color: '#2997ff', cursor: 'pointer', padding: 0, fontSize: 14, fontFamily: 'inherit', textAlign: 'left' }}>
+                          {c.name || c.email}
+                        </button>
+                      ) : (
+                        <span style={{ color: 'rgba(255,255,255,0.4)' }}>Unknown</span>
+                      )}
+                      {c?.email && <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{c.email}</div>}
+                      {(first.phone_at_order || c?.phone) && (
+                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{first.phone_at_order || c.phone}</div>
+                      )}
+                    </td>
+                  )}
+                  <td style={{ padding: '14px 18px', fontSize: 14 }}>
+                    {g.orders.length > 1 && (
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.5)', textTransform: 'uppercase', letterSpacing: 0.5, marginBottom: 6, fontWeight: 600 }}>
+                        {g.orders.length} items
+                      </div>
+                    )}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {g.orders.map(o => {
+                        const label = o.product || o.item || '—';
+                        const qty = parseInt(o.quantity ?? o.qty ?? 1, 10) || 1;
+                        const price = priceFromLabel(label);
+                        const matches = totals.coupon && totals.coupon.kind === 'percent' && couponMatchesLabel(totals.coupon, label);
+                        const effPrice = matches
+                          ? Math.max(0, price * (1 - (parseFloat(totals.coupon.amount) || 0) / 100))
+                          : price;
+                        return (
+                          <div key={o.id} style={{ display: 'flex', justifyContent: 'space-between', gap: 12, fontSize: 13, lineHeight: 1.4 }}>
+                            <span style={{ color: 'rgba(255,255,255,0.85)' }}>
+                              {qty > 1 && <span style={{ color: 'rgba(255,255,255,0.45)', marginRight: 6 }}>{qty}×</span>}
+                              {label}
+                            </span>
+                            <span style={{ whiteSpace: 'nowrap', color: 'rgba(255,255,255,0.7)', fontVariantNumeric: 'tabular-nums' }}>
+                              {matches ? (
+                                <>
+                                  <span style={{ color: 'rgba(255,255,255,0.4)', textDecoration: 'line-through', marginRight: 6 }}>${(price * qty).toFixed(2)}</span>
+                                  <span style={{ color: '#7be39a' }}>${(effPrice * qty).toFixed(2)}</span>
+                                </>
+                              ) : (
+                                <span>${(price * qty).toFixed(2)}</span>
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </td>
+                  <td style={{ padding: '14px 18px', fontSize: 13 }}>
+                    {first.payment_method
+                      ? <span className="tag" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.85)' }}>{first.payment_method}</span>
+                      : <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>}
+                    {first.coupon_code && (
+                      <div style={{ fontSize: 11, color: '#7be39a', marginTop: 6 }}>
+                        coupon: {first.coupon_code}
+                        {couponLabel && (
+                          <div style={{ color: 'rgba(123,227,154,0.7)', marginTop: 2 }}>({couponLabel})</div>
+                        )}
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '14px 18px', fontSize: 13, color: 'rgba(255,255,255,0.7)' }}>
+                    {first.shipping_method && (
+                      <div style={{ fontWeight: 500, color: 'rgba(255,255,255,0.85)' }}>
+                        {first.shipping_method}
+                        {first.shipping_cost != null && Number(first.shipping_cost) > 0 && (
+                          <span style={{ color: 'rgba(255,255,255,0.5)', marginLeft: 6 }}>+${Number(first.shipping_cost).toFixed(2)}</span>
+                        )}
+                      </div>
+                    )}
+                    {first.shipping_address && (
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 4, whiteSpace: 'pre-wrap' }}>{first.shipping_address}</div>
+                    )}
+                    {!showClient && (first.phone_at_order && first.phone_at_order !== (client?.phone)) && (
+                      <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>☎ {first.phone_at_order}</div>
+                    )}
+                    {!first.shipping_method && !first.shipping_address && (
+                      <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>
+                    )}
+                  </td>
+                  <td style={{ padding: '14px 18px', fontSize: 13, fontVariantNumeric: 'tabular-nums', whiteSpace: 'nowrap' }}>
+                    {totals.discount > 0 && (
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)', textDecoration: 'line-through', marginBottom: 2 }}>
+                        ${totals.original.toFixed(2)}
+                      </div>
+                    )}
+                    <div style={{ fontSize: 15, fontWeight: 600, color: '#fff' }}>
+                      ${totals.total.toFixed(2)}
+                    </div>
+                    {totals.discount > 0 && (
+                      <div style={{ fontSize: 11, color: '#7be39a', marginTop: 2 }}>
+                        −${totals.discount.toFixed(2)} off
+                      </div>
+                    )}
+                    {totals.shipping > 0 && (
+                      <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2 }}>
+                        incl. ${totals.shipping.toFixed(2)} ship
+                      </div>
+                    )}
+                  </td>
+                  <td style={{ padding: '14px 18px', fontSize: 13, color: 'rgba(255,255,255,0.55)' }}>
+                    {first.notes || '—'}
+                  </td>
+                  <td style={{ padding: '14px 18px' }}>
+                    <span className="tag" style={{ background: sc.bg, color: sc.fg }}>{fulfillment}</span>
+                  </td>
+                  <td style={{ padding: '14px 18px' }}>
+                    <span className="tag" style={{ background: pc.bg, color: pc.fg }}>{payment}</span>
+                  </td>
+                  <td style={{ padding: '14px 18px' }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      <select
+                        value={fulfillment}
+                        onChange={e => onSetGroupStatus && onSetGroupStatus(g.orders, e.target.value)}
+                        title="Fulfillment status"
+                        style={{ background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 8, padding: '6px 10px', fontSize: 13, width: '100%' }}>
+                        {FULFILLMENT_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                      <select
+                        value={payment}
+                        onChange={e => onSetGroupPaymentStatus && onSetGroupPaymentStatus(g.orders, e.target.value)}
+                        title="Payment status"
+                        style={{ background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 8, padding: '6px 10px', fontSize: 13, width: '100%' }}>
+                        {PAYMENT_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
+                      </select>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
 
 // ─── Login ────────────────────────────────────────────────────────────────────
 const Login = ({ onSignedIn }) => {
@@ -313,10 +625,19 @@ const ClientsList = ({ clients, onSelect, onEdit, onRefresh }) => {
 const ClientDetail = ({ client, onBack, onEdit }) => {
   const [tab, setTab] = React.useState('profile');
   const [orders, setOrders] = React.useState([]);
+  const [coupons, setCoupons] = React.useState([]);
   const [nutrition, setNutrition] = React.useState('');
   const [workout, setWorkout] = React.useState('');
   const [bloodwork, setBloodwork] = React.useState([]);
   const [saveMsg, setSaveMsg] = React.useState('');
+
+  // Coupons keyed by lowercased code, for fast lookup when computing discounted
+  // order totals on the invoicing view.
+  const couponsByCode = React.useMemo(() => {
+    const m = {};
+    (coupons || []).forEach(c => { if (c.code) m[String(c.code).toLowerCase()] = c; });
+    return m;
+  }, [coupons]);
 
   React.useEffect(() => {
     (async () => {
@@ -336,9 +657,20 @@ const ClientDetail = ({ client, onBack, onEdit }) => {
       setWorkout(wp?.content || '');
       const { data: bw } = await sb.from('bloodwork_files').select('*').eq('client_id', client.id).order('uploaded_at', { ascending: false });
       setBloodwork(bw || []);
+      // Coupons drive the discounted-price column. Inactive ones still get
+      // pulled in because historical orders may reference codes that have
+      // since been disabled.
+      const { data: cps } = await sb.from('coupons').select('*');
+      setCoupons(cps || []);
     })();
   }, [client.id]);
 
+  // ─── Status updates ────────────────────────────────────────────────────
+  // We split the single legacy `status` field into two independent dropdowns:
+  // one for fulfillment (status), one for payment (payment_status, added by
+  // migration 2026_payment_status.sql). When a group of orders share a
+  // checkout, both updates fan out to every row in the group so they stay
+  // in lock-step.
   const setOrderStatus = async (id, status) => {
     await sb.from('orders').update({ status }).eq('id', id);
     setOrders(o => o.map(x => x.id === id ? {...x, status} : x));
@@ -349,6 +681,23 @@ const ClientDetail = ({ client, onBack, onEdit }) => {
         if (!res.ok) console.warn('Inventory decrement failed:', res.error);
       }
     }
+  };
+  const setOrderPaymentStatus = async (id, payment_status) => {
+    // Empty string in the <select> maps to 'unpaid' = null in the DB.
+    const val = payment_status && payment_status !== 'unpaid' ? payment_status : null;
+    const { error } = await sb.from('orders').update({ payment_status: val }).eq('id', id);
+    if (error && /column .* does not exist/i.test(error.message || '')) {
+      // Migration not yet applied — fall back to legacy behavior so the UI
+      // doesn't break. Stuff 'paid'/'invoiced' back into `status`.
+      if (val) await sb.from('orders').update({ status: val }).eq('id', id);
+    }
+    setOrders(o => o.map(x => x.id === id ? { ...x, payment_status: val } : x));
+  };
+  const setGroupStatus = async (groupOrdersList, status) => {
+    await Promise.all(groupOrdersList.map(o => setOrderStatus(o.id, status)));
+  };
+  const setGroupPaymentStatus = async (groupOrdersList, payment_status) => {
+    await Promise.all(groupOrdersList.map(o => setOrderPaymentStatus(o.id, payment_status)));
   };
 
   const savePlan = async (kind) => {
@@ -405,69 +754,13 @@ const ClientDetail = ({ client, onBack, onEdit }) => {
       )}
 
       {tab === 'orders' && (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-          {orders.length === 0 && <div style={{ padding: 24, color: 'rgba(255,255,255,0.4)' }}>No orders.</div>}
-          {orders.length > 0 && (
-            <div className="table-wrap">
-            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-              <thead><tr style={{ background: 'rgba(255,255,255,0.03)' }}>
-                {['Date','Item','Qty','Payment','Shipping','Status','Notes',''].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
-                ))}
-              </tr></thead>
-              <tbody>
-                {orders.map(o => {
-                  const sc = STATUS_COLORS[o.status] || STATUS_COLORS.pending;
-                  return (
-                    <tr key={o.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                      <td style={{ padding: '14px 18px', color: 'rgba(255,255,255,0.6)', fontSize: 13 }}>{new Date(o.created_at || o.ordered_at).toLocaleDateString()}</td>
-                      <td style={{ padding: '14px 18px', fontSize: 14 }}>{o.item || o.product}</td>
-                      <td style={{ padding: '14px 18px' }}>{o.qty || o.quantity}</td>
-                      <td style={{ padding: '14px 18px', fontSize: 13 }}>
-                        {o.payment_method
-                          ? <span className="tag" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.85)' }}>{o.payment_method}</span>
-                          : <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>}
-                        {o.coupon_code && (
-                          <div style={{ fontSize: 11, color: '#7be39a', marginTop: 4 }}>coupon: {o.coupon_code}</div>
-                        )}
-                      </td>
-                      <td style={{ padding: '14px 18px', fontSize: 13, color: 'rgba(255,255,255,0.7)', maxWidth: 240 }}>
-                        {o.shipping_method && (
-                          <div style={{ fontWeight: 500, color: 'rgba(255,255,255,0.85)' }}>
-                            {o.shipping_method}
-                            {o.shipping_cost != null && Number(o.shipping_cost) > 0 && (
-                              <span style={{ color: 'rgba(255,255,255,0.5)', marginLeft: 6 }}>+${Number(o.shipping_cost).toFixed(2)}</span>
-                            )}
-                          </div>
-                        )}
-                        {o.shipping_address && (
-                          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 4, whiteSpace: 'pre-wrap' }}>{o.shipping_address}</div>
-                        )}
-                        {(o.phone_at_order && o.phone_at_order !== client.phone) && (
-                          <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.45)', marginTop: 4 }}>☎ {o.phone_at_order}</div>
-                        )}
-                        {!o.shipping_method && !o.shipping_address && !o.phone_at_order && (
-                          <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>
-                        )}
-                      </td>
-                      <td style={{ padding: '14px 18px' }}>
-                        <span className="tag" style={{ background: sc.bg, color: sc.fg }}>{o.status || 'pending'}</span>
-                      </td>
-                      <td style={{ padding: '14px 18px', fontSize: 13, color: 'rgba(255,255,255,0.55)', maxWidth: 200 }}>{o.notes || '—'}</td>
-                      <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                        <select value={o.status || 'pending'} onChange={e => setOrderStatus(o.id, e.target.value)}
-                          style={{ background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 8, padding: '6px 10px', fontSize: 13 }}>
-                          {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            </div>
-          )}
-        </div>
+        <OrdersTable
+          orders={orders}
+          couponsByCode={couponsByCode}
+          showClient={false}
+          client={client}
+          onSetGroupStatus={setGroupStatus}
+          onSetGroupPaymentStatus={setGroupPaymentStatus} />
       )}
 
       {(tab === 'nutrition' || tab === 'workout') && (
@@ -512,6 +805,7 @@ const ClientDetail = ({ client, onBack, onEdit }) => {
 // ─── All Orders (global) ──────────────────────────────────────────────────────
 const AllOrders = ({ clients, onOpenClient, onBack }) => {
   const [orders, setOrders] = React.useState(null); // null = loading
+  const [coupons, setCoupons] = React.useState([]);
   const [statusFilter, setStatusFilter] = React.useState('all');
   const [query, setQuery] = React.useState('');
 
@@ -520,6 +814,12 @@ const AllOrders = ({ clients, onOpenClient, onBack }) => {
     (clients || []).forEach(c => { m[c.id] = c; });
     return m;
   }, [clients]);
+
+  const couponsByCode = React.useMemo(() => {
+    const m = {};
+    (coupons || []).forEach(c => { if (c.code) m[String(c.code).toLowerCase()] = c; });
+    return m;
+  }, [coupons]);
 
   const load = React.useCallback(async () => {
     setOrders(null);
@@ -535,10 +835,14 @@ const AllOrders = ({ clients, onOpenClient, onBack }) => {
       return tb - ta;
     });
     setOrders(sorted);
+    // Coupons (active + historic) for discount lookup.
+    const { data: cps } = await sb.from('coupons').select('*');
+    setCoupons(cps || []);
   }, []);
 
   React.useEffect(() => { load(); }, [load]);
 
+  // Update fulfillment status on a single order.
   const setOrderStatus = async (id, status) => {
     await sb.from('orders').update({ status }).eq('id', id);
     setOrders(o => (o || []).map(x => x.id === id ? { ...x, status } : x));
@@ -550,16 +854,42 @@ const AllOrders = ({ clients, onOpenClient, onBack }) => {
       }
     }
   };
+  // Update payment status on a single order. Falls back to legacy `status`
+  // column if the 2026_payment_status migration hasn't been applied yet.
+  const setOrderPaymentStatus = async (id, payment_status) => {
+    const val = payment_status && payment_status !== 'unpaid' ? payment_status : null;
+    const { error } = await sb.from('orders').update({ payment_status: val }).eq('id', id);
+    if (error && /column .* does not exist/i.test(error.message || '')) {
+      if (val) await sb.from('orders').update({ status: val }).eq('id', id);
+    }
+    setOrders(o => (o || []).map(x => x.id === id ? { ...x, payment_status: val } : x));
+  };
+  const setGroupStatus = async (groupOrdersList, status) => {
+    await Promise.all(groupOrdersList.map(o => setOrderStatus(o.id, status)));
+  };
+  const setGroupPaymentStatus = async (groupOrdersList, payment_status) => {
+    await Promise.all(groupOrdersList.map(o => setOrderPaymentStatus(o.id, payment_status)));
+  };
 
+  // Filter chips understand both fulfillment values AND payment values
+  // (invoiced/paid). For payment ones, we match against the derived payment
+  // status (handles legacy rows where 'paid' was stored in `status`).
   const filtered = React.useMemo(() => {
     if (!orders) return [];
     const q = query.trim().toLowerCase();
     return orders.filter(o => {
-      if (statusFilter !== 'all' && (o.status || 'pending') !== statusFilter) return false;
+      if (statusFilter !== 'all') {
+        const { fulfillment, payment } = readStatuses(o);
+        if (statusFilter === 'invoiced' || statusFilter === 'paid') {
+          if (payment !== statusFilter) return false;
+        } else {
+          if (fulfillment !== statusFilter) return false;
+        }
+      }
       if (!q) return true;
       const c = clientById[o.client_id];
       const blob = [
-        o.item, o.product, o.notes,
+        o.item, o.product, o.notes, o.coupon_code,
         c?.name, c?.email, c?.phone,
       ].filter(Boolean).join(' ').toLowerCase();
       return blob.includes(q);
@@ -571,8 +901,9 @@ const AllOrders = ({ clients, onOpenClient, onBack }) => {
     STATUS_OPTIONS.forEach(s => { c[s] = 0; });
     (orders || []).forEach(o => {
       c.all += 1;
-      const s = o.status || 'pending';
-      if (c[s] !== undefined) c[s] += 1;
+      const { fulfillment, payment } = readStatuses(o);
+      if (c[fulfillment] !== undefined) c[fulfillment] += 1;
+      if (payment !== 'unpaid' && c[payment] !== undefined) c[payment] += 1;
     });
     return c;
   }, [orders]);
@@ -618,96 +949,26 @@ const AllOrders = ({ clients, onOpenClient, onBack }) => {
         </div>
       </div>
 
-      <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-        {orders === null && (
-          <div style={{ padding: 32, color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>Loading…</div>
-        )}
-        {orders !== null && filtered.length === 0 && (
-          <div style={{ padding: 32, color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>
-            {orders.length === 0
-              ? 'No orders yet. When clients check out, orders will appear here.'
-              : 'No orders match this filter.'}
-          </div>
-        )}
-        {filtered.length > 0 && (
-          <div className="table-wrap">
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: 'rgba(255,255,255,0.03)' }}>
-                {['Date', 'Client', 'Item', 'Qty', 'Payment', 'Shipping', 'Status', 'Notes', ''].map(h => (
-                  <th key={h} style={{ textAlign: 'left', padding: '12px 18px', fontSize: 11, fontWeight: 600, color: 'rgba(255,255,255,0.6)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(o => {
-                const sc = STATUS_COLORS[o.status] || STATUS_COLORS.pending;
-                const c = clientById[o.client_id];
-                return (
-                  <tr key={o.id} style={{ borderTop: '1px solid rgba(255,255,255,0.05)' }}>
-                    <td style={{ padding: '14px 18px', color: 'rgba(255,255,255,0.6)', fontSize: 13, whiteSpace: 'nowrap' }}>
-                      {new Date(o.created_at || o.ordered_at).toLocaleDateString()}
-                    </td>
-                    <td style={{ padding: '14px 18px', fontSize: 14 }}>
-                      {c ? (
-                        <button onClick={() => onOpenClient(c)}
-                          style={{ background: 'transparent', border: 'none', color: '#2997ff', cursor: 'pointer', padding: 0, fontSize: 14, fontFamily: 'inherit', textAlign: 'left' }}>
-                          {c.name || c.email}
-                        </button>
-                      ) : (
-                        <span style={{ color: 'rgba(255,255,255,0.4)' }}>Unknown client</span>
-                      )}
-                      {c?.email && (
-                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{c.email}</div>
-                      )}
-                      {(o.phone_at_order || c?.phone) && (
-                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.4)', marginTop: 2 }}>{o.phone_at_order || c.phone}</div>
-                      )}
-                    </td>
-                    <td style={{ padding: '14px 18px', fontSize: 14 }}>{o.item || o.product || '—'}</td>
-                    <td style={{ padding: '14px 18px' }}>{o.qty || o.quantity || 1}</td>
-                    <td style={{ padding: '14px 18px', fontSize: 13 }}>
-                      {o.payment_method
-                        ? <span className="tag" style={{ background: 'rgba(255,255,255,0.06)', color: 'rgba(255,255,255,0.85)' }}>{o.payment_method}</span>
-                        : <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>}
-                      {o.coupon_code && (
-                        <div style={{ fontSize: 11, color: '#7be39a', marginTop: 4 }}>coupon: {o.coupon_code}</div>
-                      )}
-                    </td>
-                    <td style={{ padding: '14px 18px', fontSize: 13, color: 'rgba(255,255,255,0.7)', maxWidth: 260 }}>
-                      {o.shipping_method && (
-                        <div style={{ fontWeight: 500, color: 'rgba(255,255,255,0.85)' }}>
-                          {o.shipping_method}
-                          {o.shipping_cost != null && Number(o.shipping_cost) > 0 && (
-                            <span style={{ color: 'rgba(255,255,255,0.5)', marginLeft: 6 }}>+${Number(o.shipping_cost).toFixed(2)}</span>
-                          )}
-                        </div>
-                      )}
-                      {o.shipping_address && (
-                        <div style={{ fontSize: 12, color: 'rgba(255,255,255,0.55)', marginTop: 4, whiteSpace: 'pre-wrap' }}>{o.shipping_address}</div>
-                      )}
-                      {!o.shipping_method && !o.shipping_address && (
-                        <span style={{ color: 'rgba(255,255,255,0.3)' }}>—</span>
-                      )}
-                    </td>
-                    <td style={{ padding: '14px 18px' }}>
-                      <span className="tag" style={{ background: sc.bg, color: sc.fg }}>{o.status || 'pending'}</span>
-                    </td>
-                    <td style={{ padding: '14px 18px', fontSize: 13, color: 'rgba(255,255,255,0.55)', maxWidth: 240 }}>{o.notes || '—'}</td>
-                    <td style={{ padding: '14px 18px', textAlign: 'right' }}>
-                      <select value={o.status || 'pending'} onChange={e => setOrderStatus(o.id, e.target.value)}
-                        style={{ background: 'rgba(255,255,255,0.06)', color: '#fff', border: '1px solid rgba(255,255,255,0.10)', borderRadius: 8, padding: '6px 10px', fontSize: 13 }}>
-                        {STATUS_OPTIONS.map(s => <option key={s} value={s}>{s}</option>)}
-                      </select>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-          </div>
-        )}
-      </div>
+      {orders === null && (
+        <div className="card" style={{ padding: 32, color: 'rgba(255,255,255,0.5)', textAlign: 'center' }}>Loading…</div>
+      )}
+      {orders !== null && filtered.length === 0 && (
+        <div className="card" style={{ padding: 32, color: 'rgba(255,255,255,0.4)', textAlign: 'center' }}>
+          {orders.length === 0
+            ? 'No orders yet. When clients check out, orders will appear here.'
+            : 'No orders match this filter.'}
+        </div>
+      )}
+      {filtered.length > 0 && (
+        <OrdersTable
+          orders={filtered}
+          couponsByCode={couponsByCode}
+          showClient={true}
+          clientById={clientById}
+          onOpenClient={onOpenClient}
+          onSetGroupStatus={setGroupStatus}
+          onSetGroupPaymentStatus={setGroupPaymentStatus} />
+      )}
     </div>
   );
 };
@@ -786,7 +1047,7 @@ const App = () => {
         </div>
       </header>
 
-      <main className="admin-main">
+      <main className={"admin-main" + ((showOrders || selected || editor) ? " is-wide" : "")}>
         {showBuilder
           ? <WorkoutBuilder sb={sb} clients={clients} onBack={() => setShowBuilder(false)} />
           : showCalculator
