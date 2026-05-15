@@ -764,7 +764,7 @@ const ClientDetail = ({ client, onBack, onEdit }) => {
 
       {tab === 'orders' && (
         <OrdersTable
-          orders={orders}
+          orders={(orders || []).filter(o => readStatuses(o).fulfillment !== 'cancelled')}
           couponsByCode={couponsByCode}
           showClient={false}
           client={client}
@@ -894,8 +894,11 @@ const AllOrders = ({ clients, onOpenClient, onBack }) => {
     if (!orders) return [];
     const q = query.trim().toLowerCase();
     return orders.filter(o => {
+      const { fulfillment, payment } = readStatuses(o);
+      // Hide cancelled by default. They only appear when the user explicitly
+      // clicks the "cancelled" filter chip.
+      if (statusFilter !== 'cancelled' && fulfillment === 'cancelled') return false;
       if (statusFilter !== 'all') {
-        const { fulfillment, payment } = readStatuses(o);
         if (statusFilter === 'invoiced' || statusFilter === 'paid') {
           if (payment !== statusFilter) return false;
         } else {
